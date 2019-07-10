@@ -5,7 +5,7 @@
 # the root directory of this source tree. An additional grant of patent rights
 # can be found in the PATENTS file in the same directory.
 # Vineet Kumar @ sioom: This file is a copy of translation.py, with changes
-# made for the transaction bot implementation
+# made for the dialog task implementation
 
 import pickle
 import itertools

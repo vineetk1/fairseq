@@ -1,6 +1,6 @@
 Example usage:
 ```
-# NOTE: The code is in the fairseq directory, so all paths are relative to fairseq
+# NOTE: All paths are relative to the fairseq directory
 
 # (1) Download dataset as follows:
 $ cd examples/dialog/
