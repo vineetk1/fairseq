@@ -5,8 +5,8 @@ Example usage:
 # (1) Download dataset as follows:
 $ cd examples/dialog/
 # Download dataset manually as follows:
-# (1) Go to https://fb-public.app.box.com/s/chnq60iivzv5uckpvj2n2vijlyepze6w 
-# (2) Download dialog-bAbI-tasks_1_.tgz in directory fairseq/examples/dialog
+# (a) Go to https://fb-public.app.box.com/s/chnq60iivzv5uckpvj2n2vijlyepze6w 
+# (b) Download dialog-bAbI-tasks_1_.tgz in directory fairseq/examples/dialog
 $ tar zxvf dialog-bAbI-tasks_1_.tgz
 
 # (2) Modify the dataset so it is understood by fairseq framework 
@@ -28,7 +28,7 @@ $ python3 preprocess.py --task dialog_task --source-lang hmn --target-lang bot -
 # in the directory "checkpoints/dialog/task1" must be removed, otherwise training
 # will resume from the last best checkpoint model
 $ rm -r checkpoints
-$ CUDA_VISIBLE_DEVICES=0 python3 -m pdb train.py --task dialog_task data-bin/dialog/task1 --arch lstm_dialog_1 --lr 0.25 --clip-norm 0.1 --dropout 0.2 --max-tokens 4000 --criterion label_smoothed_cross_entropy --label-smoothing 0.1 --lr-scheduler fixed --force-anneal 200 --save-dir checkpoints/dialog/task1
+$ CUDA_VISIBLE_DEVICES=0 python3 -m pdb train.py --task dialog_task data-bin/dialog/task1 --arch lstm_dialog --save-dir checkpoints/dialog/task1 --max-tokens 4000 --required-batch-size-multiple 1 --criterion label_smoothed_cross_entropy --label-smoothing 0.1 --optimizer nag --lr-scheduler fixed --force-anneal 200 --lr 0.25 --clip-norm 0.1
 
 # (6) Generate:
 $ python3 -m pdb generate.py --task dialog_task data-bin/dialog/task1 --path checkpoints/dialog/task1/checkpoint_best.pt --batch-size 128 --beam 5 --remove-bpe
