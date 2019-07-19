@@ -63,6 +63,7 @@ class LSTMStandardEncoder(FairseqEncoder):
                 self.padding_idx,
                 left_to_right=True,
             )
+            self.left_pad = False
 
         bsz, seqlen = src_tokens.size()
 
@@ -76,16 +77,17 @@ class LSTMStandardEncoder(FairseqEncoder):
         # pack embedded source tokens into a PackedSequence
         packed_x = nn.utils.rnn.pack_padded_sequence(
                                                 x, src_lengths.data.tolist())
-
+        if start_dlg:
         # apply LSTM
-        if self.bidirectional:
-            state_size = 2 * self.num_layers, bsz, self.hidden_size
-        else:
-            state_size = self.num_layers, bsz, self.hidden_size
-        h0 = x.new_zeros(*state_size)
-        c0 = x.new_zeros(*state_size)
-        packed_outs, (final_hiddens, final_cells) = self.lstm(
-                                                            packed_x, (h0, c0))
+            if self.bidirectional:
+                state_size = 2 * self.num_layers, bsz, self.hidden_size
+            else:
+                state_size = self.num_layers, bsz, self.hidden_size
+            self.hidden_state = x.new_zeros(*state_size)
+            self.cell_state = x.new_zeros(*state_size)
+
+        packed_outs, (self.hidden_state, self.cell_state) = self.lstm(
+                                packed_x, (self.hidden_state, self.cell_state))
 
         # unpack outputs and apply dropout
         x, _ = nn.utils.rnn.pad_packed_sequence(
@@ -100,8 +102,8 @@ class LSTMStandardEncoder(FairseqEncoder):
                                                                 contiguous()
                 return out.view(self.num_layers, bsz, -1)
 
-            final_hiddens = combine_bidir(final_hiddens)
-            final_cells = combine_bidir(final_cells)
+            final_hiddens = combine_bidir(self.hidden_state)
+            final_cells = combine_bidir(self.cell_state )
 
         encoder_padding_mask = src_tokens.eq(self.padding_idx).t()
 
