@@ -47,17 +47,16 @@ def collate(
         src_lengths = torch.LongTensor([seq.numel() for seq in
                                        one_seq_per_dlg
                                        ('source', seq_num_in_dlgs)])
-        src_lengths, sort_order = src_lengths.sort(descending=True)
-        dlg_ids_sorted = dlg_ids.index_select(0, sort_order)
-        src_tokens = src_tokens.index_select(0, sort_order)
 
         prev_output_tokens = None
-        target = None
+        tgt_tokens = None
         if dlgs[0].get('target', None) is not None:
-            target = merge('target', seq_num_in_dlgs, left_pad=left_pad_target)
-            target = target.index_select(0, sort_order)
-            ntokens = sum(seq.numel() for seq in
-                          one_seq_per_dlg('target', seq_num_in_dlgs))
+            tgt_tokens = merge(
+                    'target', seq_num_in_dlgs, left_pad=left_pad_target)
+            tgt_lengths = torch.LongTensor([seq.numel() for seq in
+                                           one_seq_per_dlg
+                                           ('target', seq_num_in_dlgs)])
+            ntokens = sum(tgt_lengths).item()
 
             if input_feeding:
                 # we create a shifted version of targets for feeding the
@@ -68,27 +67,31 @@ def collate(
                     left_pad=left_pad_target,
                     move_eos_to_beginning=True,
                 )
-                prev_output_tokens =\
-                    prev_output_tokens.index_select(0, sort_order)
         else:
-            ntokens = sum(seq.numel() for seq in
-                          one_seq_per_dlg('source', seq_num_in_dlgs))
+            ntokens = sum(src_lengths).item()
 
         batch.append({
-            'id': dlg_ids_sorted,
-            'nsentences': len(dlgs),
+            'id': dlg_ids,
+            'numDialogs': len(dlgs),
+            'maxNumSentencesInDialog': max_num_seqs_in_dlgs,
+            'sentenceNum': seq_num_in_dlgs,
             'ntokens': ntokens,
             'net_input': {
+                'start_dlg': True if seq_num_in_dlgs == 0 else False,
                 'src_tokens': src_tokens,
                 'src_lengths': src_lengths,
-                'sort_order': sort_order,
-                'start_dlg': True if seq_num_in_dlgs == 0 else False
+                'tgt_tokens': tgt_tokens,
+                'tgt_lengths': tgt_lengths
             },
-            'target': target,
+            'target': tgt_tokens,
         })
         if prev_output_tokens is not None:
             batch[seq_num_in_dlgs]['net_input']['prev_output_tokens'] =\
                     prev_output_tokens
+        if seq_num_in_dlgs != 0:
+            del batch[seq_num_in_dlgs]['id']
+            del batch[seq_num_in_dlgs]['numDialogs']
+            del batch[seq_num_in_dlgs]['maxNumSentencesInDialog']
     return batch
 
 

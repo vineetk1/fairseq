@@ -48,6 +48,7 @@ class LSTMStandardEncoder(FairseqEncoder):
             dropout=self.dropout_out if num_layers > 1 else 0.,
             bidirectional=bidirectional,
         )
+        # self.left_pad is a constant, so it MUST not change
         self.left_pad = left_pad
         self.padding_value = padding_value
 
@@ -55,17 +56,21 @@ class LSTMStandardEncoder(FairseqEncoder):
         if bidirectional:
             self.output_units *= 2
 
-    def forward(self, src_tokens, src_lengths, sort_order, start_dlg):
+    def forward(self, start_dlg, src_tokens, src_lengths):
         if self.left_pad:
+            # nn.utils.rnn.pack_padded_sequence requires right-padding;
             # convert left-padding to right-padding
             src_tokens = utils.convert_padding_direction(
                 src_tokens,
                 self.padding_idx,
                 left_to_right=True,
             )
-            self.left_pad = False
 
         bsz, seqlen = src_tokens.size()
+        src_lengths, sort_order = src_lengths.sort(descending=True)
+        assert 1 == sort_order.dim()
+        encoder_padding_mask = src_tokens.eq(self.padding_idx).t()
+        src_tokens = src_tokens.index_select(0, sort_order)
 
         # embed tokens
         x = self.embed_tokens(src_tokens)
@@ -77,23 +82,42 @@ class LSTMStandardEncoder(FairseqEncoder):
         # pack embedded source tokens into a PackedSequence
         packed_x = nn.utils.rnn.pack_padded_sequence(
                                                 x, src_lengths.data.tolist())
-        if start_dlg:
         # apply LSTM
+#        if start_dlg:
+        if True:
             if self.bidirectional:
                 state_size = 2 * self.num_layers, bsz, self.hidden_size
             else:
                 state_size = self.num_layers, bsz, self.hidden_size
-            self.hidden_state = x.new_zeros(*state_size)
-            self.cell_state = x.new_zeros(*state_size)
-
-        packed_outs, (self.hidden_state, self.cell_state) = self.lstm(
-                                packed_x, (self.hidden_state, self.cell_state))
+            self.h0 = x.new_zeros(*state_size)
+            self.c0 = x.new_zeros(*state_size)
+        packed_outs, (final_hiddens, final_cells) = self.lstm(
+                                packed_x, (self.h0, self.c0))
 
         # unpack outputs and apply dropout
         x, _ = nn.utils.rnn.pad_packed_sequence(
                                 packed_outs, padding_value=self.padding_value)
         x = F.dropout(x, p=self.dropout_out, training=self.training)
         assert list(x.size()) == [seqlen, bsz, self.output_units]
+
+        # re-order x, hidden, cell to their original sort_order of
+        # dialog 0, dialog 1, dialog 2, etc.
+        new_sort_order = torch.zeros_like(sort_order)
+        for value, index in enumerate(sort_order):
+            new_sort_order[index] = value
+        final_hiddens = final_hiddens.index_select(1, new_sort_order)
+        final_cells = final_cells.index_select(1, new_sort_order)
+        x = x.index_select(1, new_sort_order)
+
+#        self.h0, self.c0 = final_hiddens, final_cells
+        if start_dlg:
+            self.encoder_output = x.new_tensor((),
+                                               requires_grad=x.requires_grad)
+            self.encoder_padding_mask = encoder_padding_mask.new_tensor(
+                                    (), requires_grad=src_tokens.requires_grad)
+        self.encoder_padding_mask = torch.cat((
+            self.encoder_padding_mask, encoder_padding_mask), 0)
+        self.encoder_output = torch.cat((self.encoder_output, x), 0)
 
         if self.bidirectional:
 
@@ -102,15 +126,14 @@ class LSTMStandardEncoder(FairseqEncoder):
                                                                 contiguous()
                 return out.view(self.num_layers, bsz, -1)
 
-            final_hiddens = combine_bidir(self.hidden_state)
-            final_cells = combine_bidir(self.cell_state )
-
-        encoder_padding_mask = src_tokens.eq(self.padding_idx).t()
+            final_hiddens = combine_bidir(final_hiddens)
+            final_cells = combine_bidir(final_cells)
 
         return {
-            'encoder_out': (x, final_hiddens, final_cells),
+            'encoder_out': (self.encoder_output, final_hiddens, final_cells),
             'encoder_padding_mask':
-                encoder_padding_mask if encoder_padding_mask.any() else None
+                self.encoder_padding_mask
+                if self.encoder_padding_mask.any() else None
         }
 
     def reorder_encoder_out(self, encoder_out, new_order):
@@ -217,7 +240,7 @@ class LSTMIncrementalDecoder(FairseqIncrementalDecoder):
             self.fc_out = Linear(
                             out_embed_dim, num_embeddings, dropout=dropout_out)
 
-    def forward(self, prev_output_tokens, encoder_out, sort_order, start_dlg,
+    def forward(self, start_dlg, prev_output_tokens, encoder_out,
                 incremental_state=None):
         encoder_padding_mask = encoder_out['encoder_padding_mask']
         encoder_out = encoder_out['encoder_out']
