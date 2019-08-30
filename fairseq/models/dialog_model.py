@@ -25,6 +25,8 @@ from fairseq.models.lstm_encoders_decoders import (
 class DialogModel(FairseqEncoderDecoderModel):
     def __init__(self, encoder, decoder):
         super().__init__(encoder, decoder)
+        self.prev_tgt_tokens = None
+        self.prev_tgt_lengths = None
 
     @staticmethod
     def add_args(parser):
@@ -207,12 +209,16 @@ class DialogModel(FairseqEncoderDecoderModel):
                 - the decoder's output of shape `(batch, tgt_len, vocab)`
                 - a dictionary with any model-specific outputs
         """
-        encoder_out = self.encoder(start_dlg, src_tokens=src_tokens,
-                                   src_lengths=src_lengths)
+        if not start_dlg:
+            self.encoder(start_dlg, tokens=self.prev_tgt_tokens,
+                         lengths=self.prev_tgt_lengths)
+        self.prev_tgt_tokens = tgt_tokens
+        self.prev_tgt_lengths = tgt_lengths
+        encoder_out = self.encoder(start_dlg, tokens=src_tokens,
+                                   lengths=src_lengths)
         decoder_out = self.decoder(start_dlg,
                                    prev_output_tokens=prev_output_tokens,
-                                   encoder_out=encoder_out, )
-#        self.encoder(start_dlg, src_tokens=tgt_tokens, src_lengths=tgt_lengths)
+                                   encoder_out=encoder_out)
         return decoder_out
 
 

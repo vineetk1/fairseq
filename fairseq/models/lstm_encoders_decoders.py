@@ -56,24 +56,24 @@ class LSTMStandardEncoder(FairseqEncoder):
         if bidirectional:
             self.output_units *= 2
 
-    def forward(self, start_dlg, src_tokens, src_lengths):
+    def forward(self, start_dlg, tokens, lengths):
         if self.left_pad:
             # nn.utils.rnn.pack_padded_sequence requires right-padding;
             # convert left-padding to right-padding
-            src_tokens = utils.convert_padding_direction(
-                src_tokens,
+            tokens = utils.convert_padding_direction(
+                tokens,
                 self.padding_idx,
                 left_to_right=True,
             )
 
-        bsz, seqlen = src_tokens.size()
-        src_lengths, sort_order = src_lengths.sort(descending=True)
+        bsz, seqlen = tokens.size()
+        lengths, sort_order = lengths.sort(descending=True)
         assert 1 == sort_order.dim()
-        encoder_padding_mask = src_tokens.eq(self.padding_idx).t()
-        src_tokens = src_tokens.index_select(0, sort_order)
+        encoder_padding_mask = tokens.eq(self.padding_idx).t()
+        tokens = tokens.index_select(0, sort_order)
 
         # embed tokens
-        x = self.embed_tokens(src_tokens)
+        x = self.embed_tokens(tokens)
         x = F.dropout(x, p=self.dropout_in, training=self.training)
 
         # B x T x C -> T x B x C
@@ -81,18 +81,17 @@ class LSTMStandardEncoder(FairseqEncoder):
 
         # pack embedded source tokens into a PackedSequence
         packed_x = nn.utils.rnn.pack_padded_sequence(
-                                                x, src_lengths.data.tolist())
+                                                x, lengths.data.tolist())
         # apply LSTM
 #        if start_dlg:
-        if True:
-            if self.bidirectional:
-                state_size = 2 * self.num_layers, bsz, self.hidden_size
-            else:
-                state_size = self.num_layers, bsz, self.hidden_size
-            self.h0 = x.new_zeros(*state_size)
-            self.c0 = x.new_zeros(*state_size)
+        if self.bidirectional:
+            state_size = 2 * self.num_layers, bsz, self.hidden_size
+        else:
+            state_size = self.num_layers, bsz, self.hidden_size
+        h0 = x.new_zeros(*state_size)
+        c0 = x.new_zeros(*state_size)
         packed_outs, (final_hiddens, final_cells) = self.lstm(
-                                packed_x, (self.h0, self.c0))
+                                packed_x, (h0, c0))
 
         # unpack outputs and apply dropout
         x, _ = nn.utils.rnn.pad_packed_sequence(
@@ -111,10 +110,9 @@ class LSTMStandardEncoder(FairseqEncoder):
 
 #        self.h0, self.c0 = final_hiddens, final_cells
         if start_dlg:
-            self.encoder_output = x.new_tensor((),
-                                               requires_grad=x.requires_grad)
-            self.encoder_padding_mask = encoder_padding_mask.new_tensor(
-                                    (), requires_grad=src_tokens.requires_grad)
+            self.encoder_output = x.new_tensor((),)
+            self.encoder_padding_mask = encoder_padding_mask.new_tensor((),)
+        self.encoder_output.detach_()
         self.encoder_padding_mask = torch.cat((
             self.encoder_padding_mask, encoder_padding_mask), 0)
         self.encoder_output = torch.cat((self.encoder_output, x), 0)
