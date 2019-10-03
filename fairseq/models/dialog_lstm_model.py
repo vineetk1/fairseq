@@ -17,7 +17,7 @@ from fairseq.models import (
 )
 from fairseq.models.dialog_lstm import (
         LSTMEncoder,
-        LSTMIncrementalDecoder,
+        LSTMDecoder,
 )
 
 
@@ -165,7 +165,7 @@ class DialogModel(FairseqEncoderDecoderModel):
             bidirectional=args.encoder_bidirectional,
             pretrained_embed=pretrained_encoder_embed,
         )
-        decoder = LSTMIncrementalDecoder(
+        decoder = LSTMDecoder(
             dictionary=task.target_dictionary,
             embed_dim=args.decoder_embed_dim,
             hidden_size=args.decoder_hidden_size,
@@ -210,15 +210,12 @@ class DialogModel(FairseqEncoderDecoderModel):
                 - a dictionary with any model-specific outputs
         """
         if not start_dlg:
-            self.encoder(start_dlg, tokens=self.prev_tgt_tokens,
-                         lengths=self.prev_tgt_lengths)
+            self.encoder(start_dlg, src_tokens=self.prev_tgt_tokens,
+                         src_lengths=self.prev_tgt_lengths)
         self.prev_tgt_tokens = tgt_tokens
         self.prev_tgt_lengths = tgt_lengths
-        encoder_out = self.encoder(start_dlg, tokens=src_tokens,
-                                   lengths=src_lengths)
-        decoder_out = self.decoder(start_dlg,
-                                   prev_output_tokens=prev_output_tokens,
-                                   encoder_out=encoder_out)
+        encoder_out = self.encoder(start_dlg, src_tokens, src_lengths)
+        decoder_out = self.decoder(prev_output_tokens, encoder_out)
         return decoder_out
 
 

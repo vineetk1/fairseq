@@ -56,24 +56,24 @@ class LSTMEncoder(FairseqEncoder):
         if bidirectional:
             self.output_units *= 2
 
-    def forward(self, start_dlg, tokens, lengths):
+    def forward(self, start_dlg, src_tokens, src_lengths):
         if self.left_pad:
             # nn.utils.rnn.pack_padded_sequence requires right-padding;
             # convert left-padding to right-padding
-            tokens = utils.convert_padding_direction(
-                tokens,
+            src_tokens = utils.convert_padding_direction(
+                src_tokens,
                 self.padding_idx,
                 left_to_right=True,
             )
 
-        bsz, seqlen = tokens.size()
-        lengths, sort_order = lengths.sort(descending=True)
+        bsz, seqlen = src_tokens.size()
+        src_lengths, sort_order = src_lengths.sort(descending=True)
         assert 1 == sort_order.dim()
-        encoder_padding_mask = tokens.eq(self.padding_idx).t()
-        tokens = tokens.index_select(0, sort_order)
+        encoder_padding_mask = src_tokens.eq(self.padding_idx).t()
+        src_tokens = src_tokens.index_select(0, sort_order)
 
         # embed tokens
-        x = self.embed_tokens(tokens)
+        x = self.embed_tokens(src_tokens)
         x = F.dropout(x, p=self.dropout_in, training=self.training)
 
         # B x T x C -> T x B x C
@@ -81,7 +81,7 @@ class LSTMEncoder(FairseqEncoder):
 
         # pack embedded source tokens into a PackedSequence
         packed_x = nn.utils.rnn.pack_padded_sequence(
-                                                x, lengths.data.tolist())
+                                                x, src_lengths.data.tolist())
         # apply LSTM
         if self.bidirectional:
             state_size = 2 * self.num_layers, bsz, self.hidden_size
@@ -182,7 +182,7 @@ class AttentionLayer(nn.Module):
         return x, attn_scores
 
 
-class LSTMIncrementalDecoder(FairseqIncrementalDecoder):
+class LSTMDecoder(FairseqIncrementalDecoder):
     """LSTM decoder."""
     def __init__(
         self, dictionary, embed_dim=512, hidden_size=512, out_embed_dim=512,
@@ -236,7 +236,7 @@ class LSTMIncrementalDecoder(FairseqIncrementalDecoder):
             self.fc_out = Linear(
                             out_embed_dim, num_embeddings, dropout=dropout_out)
 
-    def forward(self, start_dlg, prev_output_tokens, encoder_out,
+    def forward(self, prev_output_tokens, encoder_out,
                 incremental_state=None):
         encoder_padding_mask = encoder_out['encoder_padding_mask']
         encoder_out = encoder_out['encoder_out']
