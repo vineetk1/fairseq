@@ -95,87 +95,88 @@ def main(args):
     has_target = True
     with progress_bar.build_progress_bar(args, itr) as t:
         wps_meter = TimeMeter()
-        for sample in t:
-            sample = utils.move_to_cuda(sample) if use_cuda else sample
-            #if 'net_input' not in sample:
-            #    continue
+        for dialogs_sample in t:
+            for sample in dialogs_sample:
+                sample = utils.move_to_cuda(sample) if use_cuda else sample
+                if 'net_input' not in sample:
+                    continue
 
-            prefix_tokens = None
-            if args.prefix_size > 0:
-                prefix_tokens = sample['target'][:, :args.prefix_size]
+                prefix_tokens = None
+                if args.prefix_size > 0:
+                    prefix_tokens = sample['target'][:, :args.prefix_size]
 
-            gen_timer.start()
-            hypos = task.inference_step(generator, models, sample, prefix_tokens)
-            num_generated_tokens = sum(len(h[0]['tokens']) for h in hypos)
-            gen_timer.stop(num_generated_tokens)
+                gen_timer.start()
+                hypos = task.inference_step(generator, models, sample, prefix_tokens)
+                num_generated_tokens = sum(len(h[0]['tokens']) for h in hypos)
+                gen_timer.stop(num_generated_tokens)
 
-            for i, sample_id in enumerate(sample['id'].tolist()):
-                has_target = sample['target'] is not None
+                for i, sample_id in enumerate(dialogs_sample[0]['id'].tolist()):
+                    has_target = sample['target'] is not None
 
-                # Remove padding
-                src_tokens = utils.strip_pad(sample['net_input']['src_tokens'][i, :], tgt_dict.pad())
-                target_tokens = None
-                if has_target:
-                    target_tokens = utils.strip_pad(sample['target'][i, :], tgt_dict.pad()).int().cpu()
+                    # Remove padding
+                    src_tokens = utils.strip_pad(sample['net_input']['src_tokens'][i, :], tgt_dict.pad())
+                    target_tokens = None
+                    if has_target:
+                        target_tokens = utils.strip_pad(sample['target'][i, :], tgt_dict.pad()).int().cpu()
 
-                # Either retrieve the original sentences or regenerate them from tokens.
-                if align_dict is not None:
-                    src_str = task.dataset(args.gen_subset).src.get_original_text(sample_id)
-                    target_str = task.dataset(args.gen_subset).tgt.get_original_text(sample_id)
-                else:
-                    if src_dict is not None:
-                        src_str = src_dict.string(src_tokens, args.remove_bpe)
+                    # Either retrieve the original sentences or regenerate them from tokens.
+                    if align_dict is not None:
+                        src_str = task.dataset(args.gen_subset).src.get_original_text(sample_id)
+                        target_str = task.dataset(args.gen_subset).tgt.get_original_text(sample_id)
                     else:
-                        src_str = ""
-                    if has_target:
-                        target_str = tgt_dict.string(target_tokens, args.remove_bpe, escape_unk=True)
-
-                if not args.quiet:
-                    if src_dict is not None:
-                        print('S-{}\t{}'.format(sample_id, src_str))
-                    if has_target:
-                        print('T-{}\t{}'.format(sample_id, target_str))
-
-                # Process top predictions
-                for j, hypo in enumerate(hypos[i][:min(len(hypos), args.nbest)]):
-                    hypo_tokens, hypo_str, alignment = utils.post_process_prediction(
-                        hypo_tokens=hypo['tokens'].int().cpu(),
-                        src_str=src_str,
-                        alignment=hypo['alignment'].int().cpu() if hypo['alignment'] is not None else None,
-                        align_dict=align_dict,
-                        tgt_dict=tgt_dict,
-                        remove_bpe=args.remove_bpe,
-                    )
+                        if src_dict is not None:
+                            src_str = src_dict.string(src_tokens, args.remove_bpe)
+                        else:
+                            src_str = ""
+                        if has_target:
+                            target_str = tgt_dict.string(target_tokens, args.remove_bpe, escape_unk=True)
 
                     if not args.quiet:
-                        print('H-{}\t{}\t{}'.format(sample_id, hypo['score'], hypo_str))
-                        print('P-{}\t{}'.format(
-                            sample_id,
-                            ' '.join(map(
-                                lambda x: '{:.4f}'.format(x),
-                                hypo['positional_scores'].tolist(),
-                            ))
-                        ))
+                        if src_dict is not None:
+                            print('S-{}\t{}'.format(sample_id, src_str))
+                        if has_target:
+                            print('T-{}\t{}'.format(sample_id, target_str))
 
-                        if args.print_alignment:
-                            print('A-{}\t{}'.format(
+                    # Process top predictions
+                    for j, hypo in enumerate(hypos[i][:min(len(hypos), args.nbest)]):
+                        hypo_tokens, hypo_str, alignment = utils.post_process_prediction(
+                            hypo_tokens=hypo['tokens'].int().cpu(),
+                            src_str=src_str,
+                            alignment=hypo['alignment'].int().cpu() if hypo['alignment'] is not None else None,
+                            align_dict=align_dict,
+                            tgt_dict=tgt_dict,
+                            remove_bpe=args.remove_bpe,
+                        )
+
+                        if not args.quiet:
+                            print('H-{}\t{}\t{}'.format(sample_id, hypo['score'], hypo_str))
+                            print('P-{}\t{}'.format(
                                 sample_id,
-                                ' '.join(map(lambda x: str(utils.item(x)), alignment))
+                                ' '.join(map(
+                                    lambda x: '{:.4f}'.format(x),
+                                    hypo['positional_scores'].tolist(),
+                                ))
                             ))
 
-                    # Score only the top hypothesis
-                    if has_target and j == 0:
-                        if align_dict is not None or args.remove_bpe is not None:
-                            # Convert back to tokens for evaluation with unk replacement and/or without BPE
-                            target_tokens = tgt_dict.encode_line(target_str, add_if_not_exist=True)
-                        if hasattr(scorer, 'add_string'):
-                            scorer.add_string(target_str, hypo_str)
-                        else:
-                            scorer.add(target_tokens, hypo_tokens)
+                            if args.print_alignment:
+                                print('A-{}\t{}'.format(
+                                    sample_id,
+                                    ' '.join(map(lambda x: str(utils.item(x)), alignment))
+                                ))
+
+                        # Score only the top hypothesis
+                        if has_target and j == 0:
+                            if align_dict is not None or args.remove_bpe is not None:
+                                # Convert back to tokens for evaluation with unk replacement and/or without BPE
+                                target_tokens = tgt_dict.encode_line(target_str, add_if_not_exist=True)
+                            if hasattr(scorer, 'add_string'):
+                                scorer.add_string(target_str, hypo_str)
+                            else:
+                                scorer.add(target_tokens, hypo_tokens)
 
             wps_meter.update(num_generated_tokens)
             t.log({'wps': round(wps_meter.avg)})
-            num_sentences += sample['nsentences']
+            #num_sentences += sample['nsentences']
 
     print('| Translated {} sentences ({} tokens) in {:.1f}s ({:.2f} sentences/s, {:.2f} tokens/s)'.format(
         num_sentences, gen_timer.n, gen_timer.sum, num_sentences / gen_timer.sum, 1. / gen_timer.avg))

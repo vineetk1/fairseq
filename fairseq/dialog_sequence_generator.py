@@ -105,7 +105,7 @@ class SequenceGenerator(object):
     def generate(
         self,
         models,
-        samples,
+        sample,
         prefix_tokens=None,
         bos_token=None,
         **kwargs
@@ -122,9 +122,6 @@ class SequenceGenerator(object):
         if not self.retain_dropout:
             model.eval()
 
-        # following 2 lines should call the later lines as a function
-        for sample in samples:
-            break
         # model.forward normally channels prev_output_tokens into the decoder
         # separately, but SequenceGenerator directly calls model.encoder
         encoder_input = {
