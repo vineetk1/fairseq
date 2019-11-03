@@ -57,7 +57,6 @@ class DialogMetrics(object):
             num_consec_trns_pass, hypo_num = \
                 torch.tensor(hypos_num_consec_trns_pass).topk(1)
             self.count[f'{hypo_num.item()}'] += 1
-            self.count[f'{hypo_num.item()} {num_consec_trns_pass.item()}'] += 1
             self.count[f'{hypo_num.item()} {num_consec_trns_pass.item()} {num_trns_in_dlg}'] += 1
 
     def hypos_per_turn(self, hypos_per_trn):
@@ -91,30 +90,61 @@ class DialogMetrics(object):
             del self.hypos_batch
 
     def print_stats(self):
-        print(f'counter = {self.count}')
-        print(f'max # of turns={self.max_num_trns}')
+        for num_trns_in_dlg in range(1, self.max_num_trns+1):
+            self.count[f'num_dlgs_pass'] += 1
+            self.count[f'num_dlgs_pass {num_trns_in_dlg}'] += 1
+            self.count[f'num_dlgs_fail'] += 1
+            self.count[f'num_trns_pass'] += 1
+            for hypo_num in range(self.beam_size):
+                self.count[f'{hypo_num}'] += 1
+                for num_consec_trns_pass in range(1, self.max_num_trns+1):
+                    self.count[f'{hypo_num} {num_consec_trns_pass} {num_trns_in_dlg}'] += 1
 
-        print('% number of dialogs that passed = ({}/{} x 100) = {}%'.format(
-            self.count['num_dlgs_pass'], self.count['num_dlgs'],
-            self.count['num_dlgs_pass']/self.count['num_dlgs'] * 100))
+        print('\n Statistics on the test')
+        print('--------------------------')
 
-        print('% number of turns that passed = ({}/{} x 100) = {}%'.format(
+        # Statistics on dialogs that passed
+        num_dlgs_pass = self.count['num_dlgs_pass']
+        print('** % number of dialogs that passed = ({}/{} x 100) = {}%'.format(
+            num_dlgs_pass, self.count['num_dlgs'],
+            num_dlgs_pass/self.count['num_dlgs'] * 100))
+        if num_dlgs_pass:
+            first_time = True
+            for num_trns_in_dlg in range(1, self.max_num_trns+1):
+                cnt_num_trns_in_dlg = self.count[f'num_dlgs_pass {num_trns_in_dlg}']
+                if cnt_num_trns_in_dlg:
+                    if first_time:
+                        print(f'    ** ((# of turns in dialog: # of occurrences) = ({num_trns_in_dlg}: {cnt_num_trns_in_dlg})', end="")
+                        first_time = False
+                    else:
+                        print(f', ({num_trns_in_dlg}: {cnt_num_trns_in_dlg})', end="")
+            print()
+
+        # Statistics on turns of dialogs
+        print('** % number of turns that passed = ({}/{} x 100) = {}%'.format(
             self.count['num_trns_pass'], self.count['num_trns'],
             self.count['num_trns_pass']/self.count['num_trns'] * 100))
 
-        print('% number of dialogs that failed = ({}/{} x 100) = {}%'.format(
-            self.count['num_dlgs_fail'], self.count['num_dlgs'],
-            self.count['num_dlgs_fail']/self.count['num_dlgs'] * 100))
-        for hypo_num in range(self.beam_size):
-            hypo_num_cnt = self.count[f'{hypo_num}']
-            if hypo_num_cnt:
-                print(f'    (* hypo #: # of occurrences) = ({hypo_num}: {hypo_num_cnt})')
-                for num_consec_trns_pass in range(self.max_num_trns):
+        # Statistics on dialogs that failed
+        num_dlgs_fail = self.count['num_dlgs_fail']
+        print('** % number of dialogs that failed = ({}/{} x 100) = {}%'.format(
+            num_dlgs_fail, self.count['num_dlgs'],
+            num_dlgs_fail/self.count['num_dlgs'] * 100))
+        if num_dlgs_fail:
+            print(f'    hypo 0 sequence has highest probability whereas hypo {self.beam_size-1} sequence has lowest probability')
+            for hypo_num in range(self.beam_size):
+                cnt_hypo_num = self.count[f'{hypo_num}']
+                if cnt_hypo_num:
+                    print(f'    ** hypo = {hypo_num} , # of occurrences = {cnt_hypo_num}')
                     first_time = True
-                    hypo_num_cnt = self.count[f'{hypo_num}']
+                    for num_trns_in_dlg in range(1, self.max_num_trns+1):
+                        for num_consec_trns_pass in range(1, num_trns_in_dlg+1):
+                            cnt_consecTrns_per_trnsInDlg = self.count[f'{hypo_num} {num_consec_trns_pass} {num_trns_in_dlg}']
+                            if cnt_consecTrns_per_trnsInDlg:
+                                if first_time:
+                                    print(f'        ** (# of consecutive turns that passed, counting from beginning of dialog / # of turns in dialog: # of occurrences) = ({num_consec_trns_pass}/{num_trns_in_dlg}: {cnt_consecTrns_per_trnsInDlg})', end="")
+                                    first_time = False
+                                else:
+                                    print(f', ({num_consec_trns_pass}/{num_trns_in_dlg}: {cnt_consecTrns_per_trnsInDlg})', end="")
+                    print()
 
-
-'''
-        print(' ** (Number of turns: Number of occurrences):'.format(
-            count for num_trns_in_dlg in range(self.max_num_trns) if self.count[f'num_dlgs_pass {num_trns_in_dlg}'] else pass
-'''

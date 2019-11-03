@@ -15,6 +15,8 @@ import torch
 
 from fairseq import bleu, checkpoint_utils, options, progress_bar, tasks, utils
 from fairseq.meters import StopwatchMeter, TimeMeter
+from fairseq.data import data_utils
+from dialog_metrics import DialogMetrics
 
 
 def main(args):
@@ -91,11 +93,13 @@ def main(args):
         scorer = bleu.SacrebleuScorer()
     else:
         scorer = bleu.Scorer(tgt_dict.pad(), tgt_dict.eos(), tgt_dict.unk())
+    dlgs_metrics = DialogMetrics(src_dict, tgt_dict, args.remove_bpe, args.beam)
     num_sentences = 0
     has_target = True
     with progress_bar.build_progress_bar(args, itr) as t:
         wps_meter = TimeMeter()
         for dialogs_sample in t:
+            dlgs_metrics.dialogs_batch(dialogs_sample)
             for sample in dialogs_sample:
                 sample = utils.move_to_cuda(sample) if use_cuda else sample
                 if 'net_input' not in sample:
@@ -109,6 +113,20 @@ def main(args):
                 hypos = task.inference_step(generator, models, sample, prefix_tokens)
                 num_generated_tokens = sum(len(h[0]['tokens']) for h in hypos)
                 gen_timer.stop(num_generated_tokens)
+
+                @torch.no_grad()
+                def encode_hypos(best_hypos_seqs):
+                    # encode best predicted sequence from each dialog in batch
+                    hypos_seqs = data_utils.collate_tokens(best_hypos_seqs, 1)
+                    hypos_seqs_len = hypos_seqs.new_tensor(
+                                      [seq.numel() for seq in best_hypos_seqs])
+                    for model in models:
+                        model.encoder(**{'start_dlg': False,
+                                         'src_tokens': hypos_seqs,
+                                         'src_lengths': hypos_seqs_len})
+                encode_hypos([seqs[0]['tokens'] for seqs in hypos])
+
+                dlgs_metrics.hypos_per_turn(hypos)
 
                 for i, sample_id in enumerate(dialogs_sample[0]['id'].tolist()):
                     has_target = sample['target'] is not None
@@ -182,6 +200,8 @@ def main(args):
         num_sentences, gen_timer.n, gen_timer.sum, num_sentences / gen_timer.sum, 1. / gen_timer.avg))
     if has_target:
         print('| Generate {} with beam={}: {}'.format(args.gen_subset, args.beam, scorer.result_string()))
+
+    dlgs_metrics.print_stats()
     return scorer
 
 
