@@ -201,7 +201,8 @@ def main(args):
     if has_target:
         print('| Generate {} with beam={}: {}'.format(args.gen_subset, args.beam, scorer.result_string()))
 
-    dlgs_metrics.print_stats()
+    dlgs_metrics.print_stats(write_to_file=False)
+    dlgs_metrics.print_stats(write_to_file=True)
     return scorer
 
 

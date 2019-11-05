@@ -31,4 +31,4 @@ $ rm -r checkpoints
 $ CUDA_VISIBLE_DEVICES=0 python3 -m pdb train.py --task dialog_task data-bin/dialog/task1 --arch dialog_lstm_model --save-dir checkpoints/dialog/task1 --max-tokens 4000 --required-batch-size-multiple 1 --criterion label_smoothed_cross_entropy --label-smoothing 0.1 --optimizer nag --lr-scheduler fixed --force-anneal 200 --lr 0.25 --clip-norm 0.1 --min-lr 2.47033e-322
 
 # (6) Generate:
-$ python3 -m pdb dialog_generate.py --task dialog_task data-bin/dialog/task1 --path checkpoints/dialog/task1/checkpoint_best.pt --batch-size 128 --beam 5 --remove-bpe
+$ python3 -m pdb dialog_generate.py --task dialog_task data-bin/dialog/task1 --path checkpoints/dialog/task1/checkpoint_best.pt --batch-size 128 --beam 5 --remove-bpe --quiet

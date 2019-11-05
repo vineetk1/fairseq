@@ -1,5 +1,5 @@
 '''
-Vineet Kumar, sioom corp
+Vineet Kumar, sioom.ai
 Modify dataset to create new dataset that works with the fairseq code base
 From directory examples/dialog/, issue following command:
 python3 create-fairseq-dialog-dataset.py data-bin/dialog
