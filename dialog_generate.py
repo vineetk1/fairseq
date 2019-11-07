@@ -17,6 +17,7 @@ from fairseq import bleu, checkpoint_utils, options, progress_bar, tasks, utils
 from fairseq.meters import StopwatchMeter, TimeMeter
 from fairseq.data import data_utils
 from dialog_metrics import DialogMetrics
+import textwrap
 
 
 def main(args):
@@ -93,25 +94,32 @@ def main(args):
         scorer = bleu.SacrebleuScorer()
     else:
         scorer = bleu.Scorer(tgt_dict.pad(), tgt_dict.eos(), tgt_dict.unk())
-    dlgs_metrics = DialogMetrics(src_dict, tgt_dict, args.remove_bpe, args.beam)
+    dlgs_metrics = DialogMetrics(
+            src_dict, tgt_dict, args.remove_bpe, args.beam)
     num_sentences = 0
     has_target = True
     with progress_bar.build_progress_bar(args, itr) as t:
         wps_meter = TimeMeter()
-        for dialogs_sample in t:
-            dlgs_metrics.dialogs_batch(dialogs_sample)
-            for sample in dialogs_sample:
-                sample = utils.move_to_cuda(sample) if use_cuda else sample
-                if 'net_input' not in sample:
+        for dlgs_batch in t:
+            dlgs_metrics.dialogs_batch(dlgs_batch)
+            for dlgsBch_perTrn in dlgs_batch:
+                dlgsBch_perTrn = utils.move_to_cuda(dlgsBch_perTrn) \
+                                 if use_cuda else dlgsBch_perTrn
+                if 'net_input' not in dlgsBch_perTrn:
                     continue
 
                 prefix_tokens = None
                 if args.prefix_size > 0:
-                    prefix_tokens = sample['target'][:, :args.prefix_size]
+                    prefix_tokens = \
+                            dlgsBch_perTrn['target'][:, :args.prefix_size]
 
                 gen_timer.start()
-                hypos = task.inference_step(generator, models, sample, prefix_tokens)
-                num_generated_tokens = sum(len(h[0]['tokens']) for h in hypos)
+                hypos_perTrn = task.inference_step(
+                        generator, models, dlgsBch_perTrn, prefix_tokens)
+                num_generated_tokens = \
+                    sum(len(hypo['tokens'])
+                        for hypos_perTrn_perDlg in hypos_perTrn
+                        for hypo in hypos_perTrn_perDlg)
                 gen_timer.stop(num_generated_tokens)
 
                 @torch.no_grad()
@@ -124,18 +132,18 @@ def main(args):
                         model.encoder(**{'start_dlg': False,
                                          'src_tokens': hypos_seqs,
                                          'src_lengths': hypos_seqs_len})
-                encode_hypos([seqs[0]['tokens'] for seqs in hypos])
+                encode_hypos([seqs[0]['tokens'] for seqs in hypos_perTrn])
 
-                dlgs_metrics.hypos_per_turn(hypos)
+                dlgs_metrics.hypos_per_turn(hypos_perTrn)
 
-                for i, sample_id in enumerate(dialogs_sample[0]['id'].tolist()):
-                    has_target = sample['target'] is not None
+                for i, sample_id in enumerate(dlgs_batch[0]['id'].tolist()):
+                    has_target = dlgsBch_perTrn['target'] is not None
 
                     # Remove padding
-                    src_tokens = utils.strip_pad(sample['net_input']['src_tokens'][i, :], tgt_dict.pad())
+                    src_tokens = utils.strip_pad(dlgsBch_perTrn['net_input']['src_tokens'][i, :], tgt_dict.pad())
                     target_tokens = None
                     if has_target:
-                        target_tokens = utils.strip_pad(sample['target'][i, :], tgt_dict.pad()).int().cpu()
+                        target_tokens = utils.strip_pad(dlgsBch_perTrn['target'][i, :], tgt_dict.pad()).int().cpu()
 
                     # Either retrieve the original sentences or regenerate them from tokens.
                     if align_dict is not None:
@@ -156,7 +164,7 @@ def main(args):
                             print('T-{}\t{}'.format(sample_id, target_str))
 
                     # Process top predictions
-                    for j, hypo in enumerate(hypos[i][:min(len(hypos), args.nbest)]):
+                    for j, hypo in enumerate(hypos_perTrn[i][:min(len(hypos_perTrn), args.nbest)]):
                         hypo_tokens, hypo_str, alignment = utils.post_process_prediction(
                             hypo_tokens=hypo['tokens'].int().cpu(),
                             src_str=src_str,
@@ -192,17 +200,30 @@ def main(args):
                             else:
                                 scorer.add(target_tokens, hypo_tokens)
 
-            wps_meter.update(num_generated_tokens)
-            t.log({'wps': round(wps_meter.avg)})
-            #num_sentences += sample['nsentences']
+                wps_meter.update(num_generated_tokens)
+                t.log({'wps': round(wps_meter.avg)})
 
-    print('| Translated {} sentences ({} tokens) in {:.1f}s ({:.2f} sentences/s, {:.2f} tokens/s)'.format(
-        num_sentences, gen_timer.n, gen_timer.sum, num_sentences / gen_timer.sum, 1. / gen_timer.avg))
-    if has_target:
-        print('| Generate {} with beam={}: {}'.format(args.gen_subset, args.beam, scorer.result_string()))
+    strng = '\nStatistics on the test\n----------------------'
+    print(strng)
+    dlgs_metrics.write_to_file(strng, decorate=False)
+
+    strng = 'Translated {} dialogs with {} turns and {} tokens using beam={} in {:.1f}s ({:.2f} dialogs/s, {:.2f} turns/s, {:.2f} tokens/s)'.format(
+             dlgs_metrics.num_dlgs(), dlgs_metrics.num_trns(), gen_timer.n,
+             args.beam, gen_timer.sum, dlgs_metrics.num_dlgs()/gen_timer.sum,
+             dlgs_metrics.num_trns()/gen_timer.sum, 1./gen_timer.avg)
+    print(textwrap.fill('** ' + strng, width=80, initial_indent='',
+          subsequent_indent='    '))
+    dlgs_metrics.write_to_file(strng)
 
     dlgs_metrics.print_stats(write_to_file=False)
     dlgs_metrics.print_stats(write_to_file=True)
+
+    if has_target:
+        strng = 'Generate {} with beam={}: {}'.format(
+                            args.gen_subset, args.beam, scorer.result_string())
+        print(textwrap.fill('** ' + strng, width=80, initial_indent='',
+              subsequent_indent='    '))
+    dlgs_metrics.write_to_file(strng)
     return scorer
 
 

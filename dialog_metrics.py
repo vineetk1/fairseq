@@ -163,7 +163,6 @@ class DialogMetrics(object):
         with open('failed_dialogs_stat', 'a') as failed_dialogs_stat_file:
             with redirect_stdout(
                     failed_dialogs_stat_file if write_to_file else sys.stdout):
-                print('\nStatistics on the test\n----------------------')
 
                 # Statistics on dialogs that passed
                 num_dlgs_pass = self.count['num_dlgs_pass']
@@ -261,3 +260,20 @@ class DialogMetrics(object):
                                                 initial_indent='      ** ',
                                                 subsequent_indent='         ')
                                   )
+
+    def num_dlgs(self):
+        return self.count['num_dlgs']
+
+    def num_trns(self):
+        return self.count['num_trns']
+
+    def write_to_file(self, strng, decorate=True):
+        with open('failed_dialogs_stat', 'a') as failed_dialogs_stat_file:
+            with redirect_stdout(failed_dialogs_stat_file):
+                if decorate:
+                    #print(textwrap.fill('** ' + strng, width=80,
+                    #      initial_indent='', subsequent_indent='    '))
+                    print(textwrap.fill('** ' + strng, width=80,
+                          initial_indent='** ', subsequent_indent='    '))
+                else:
+                    print(strng)
