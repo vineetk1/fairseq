@@ -21,7 +21,7 @@ class DialogMetrics(object):
         self.count = Counter()
         self.max_num_trns = 0
         # clear file if it exists; create file if not already created
-        with open('failed_dialogs_stat', 'w') as failed_dialogs_stat_file:
+        with open('failed_dialogs_stat.txt', 'w') as failed_dialogs_stat_file:
             with redirect_stdout(failed_dialogs_stat_file):
                 print('Abbrevations:\n-------------')
                 strng = (
@@ -45,7 +45,7 @@ class DialogMetrics(object):
 
     def failed_dlg_to_file(
             self, dlg_num, hypo_num, num_trns_in_dlg, dlg_trn_rslt):
-        with open('failed_dialogs_stat', 'a') as failed_dialogs_stat_file:
+        with open('failed_dialogs_stat.txt', 'a') as failed_dialogs_stat_file:
             with redirect_stdout(failed_dialogs_stat_file):
                 print()
                 for trn_num in range(num_trns_in_dlg):
@@ -160,7 +160,7 @@ class DialogMetrics(object):
                     self.count[strng] += 1
         '''
 
-        with open('failed_dialogs_stat', 'a') as failed_dialogs_stat_file:
+        with open('failed_dialogs_stat.txt', 'a') as failed_dialogs_stat_file:
             with redirect_stdout(
                     failed_dialogs_stat_file if write_to_file else sys.stdout):
 
@@ -267,13 +267,24 @@ class DialogMetrics(object):
     def num_trns(self):
         return self.count['num_trns']
 
-    def write_to_file(self, strng, decorate=True):
-        with open('failed_dialogs_stat', 'a') as failed_dialogs_stat_file:
-            with redirect_stdout(failed_dialogs_stat_file):
-                if decorate:
-                    #print(textwrap.fill('** ' + strng, width=80,
-                    #      initial_indent='', subsequent_indent='    '))
-                    print(textwrap.fill('** ' + strng, width=80,
-                          initial_indent='** ', subsequent_indent='    '))
-                else:
-                    print(strng)
+    def write_out(
+         self, strng, write_to=["stdout"], bullet=False,
+         first_line_indent_lev=0, next_lines_manual_indent=True,
+         next_lines_indent=0):
+        init_space = 3 * first_line_indent_lev * " "
+        init_space = init_space + "** " if bullet else init_space
+        if next_lines_manual_indent:
+            next_line_space = next_lines_indent * " "
+        else:
+            next_line_space = (len(init_space) + 1) * " "
+
+        with open('failed_dialogs_stat.txt', 'a') as failed_dialogs_stat_file:
+            for out in write_to:
+                with redirect_stdout(
+                 failed_dialogs_stat_file if out is 'file' else sys.stdout):
+                    if init_space or next_line_space:
+                        print(textwrap.fill(
+                         strng, width=80, initial_indent=init_space,
+                         subsequent_indent=next_line_space))
+                    else:
+                        print(strng)
