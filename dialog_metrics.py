@@ -21,16 +21,17 @@ class DialogMetrics(object):
         self.count = Counter()
         self.max_num_trns = 0
         # clear file if it exists; create file if not already created
-        with open('failed_dialogs_stat.txt', 'w') as failed_dialogs_stat_file:
-            with redirect_stdout(failed_dialogs_stat_file):
-                print('Abbrevations:\n-------------')
-                strng = (
-                        f'Pass (P); Fail (F); Turn (Tr); Source Sequence (S);'
-                        f' Target Sequence (T); Hypothesis Sequence: (H0) has '
-                        f'highest probability, (H1) has next hightest '
-                        f'probability, etc.'
-                )
-                print(textwrap.fill(strng, width=80))
+        with open('failed_dialogs_stat.txt', 'w'):
+            pass
+        self.write_out('Abbrevations:\n-------------', write_to=["file"])
+        strng = (
+                f'Pass (P); Fail (F); Turn (Tr); Source Sequence (S);'
+                f' Target Sequence (T); Hypothesis Sequence: (H0) has '
+                f'highest probability, (H1) has next hightest '
+                f'probability, etc.'
+        )
+        self.write_out(strng, write_to=["file"],
+                       next_lines_manual_indent=False)
 
     def dialogs_batch(self, dlgs_smpl):
         # dlgs_smpl: list of (# of turns in dialogs) dicts
@@ -43,36 +44,36 @@ class DialogMetrics(object):
         self.dlgs_batch = dlgs_smpl
         self.hypos_batch = []
 
-    def failed_dlg_to_file(
+    def _failed_dlg_to_file(
             self, dlg_num, hypo_num, num_trns_in_dlg, dlg_trn_rslt):
-        with open('failed_dialogs_stat.txt', 'a') as failed_dialogs_stat_file:
-            with redirect_stdout(failed_dialogs_stat_file):
-                print()
-                for trn_num in range(num_trns_in_dlg):
-                    src_tokens = \
-                     utils.strip_pad(self.dlgs_batch[trn_num]
-                                     ['net_input']['src_tokens'][dlg_num],
-                                     self.src_dict.pad())
-                    src_str = self.src_dict.string(src_tokens)
-                    print(textwrap.fill(f'Tr{trn_num}-S:    {src_str}',
-                          width=80, initial_indent='',
-                          subsequent_indent='          '))
-                    tgt_tokens = utils.strip_pad(self.dlgs_batch[trn_num]
-                                                 ['target'][dlg_num],
-                                                 self.tgt_dict.pad())
-                    tgt_str = self.tgt_dict.string(tgt_tokens)
-                    print(textwrap.fill(f'Tr{trn_num}-T:    {tgt_str}',
-                          width=80, initial_indent='',
-                          subsequent_indent='          '))
-                    hypo_str = self.tgt_dict.string(
-                     self.hypos_batch[trn_num][dlg_num][hypo_num]
-                                                       ['tokens'].cpu())
-                    trn_rslt = 'P' if dlg_trn_rslt[trn_num][hypo_num].item() \
-                        else 'F'
-                    print(textwrap.fill(
-                          f'Tr{trn_num}-H{hypo_num}-{trn_rslt}: {hypo_str}',
-                          width=80, initial_indent='',
-                          subsequent_indent='          '))
+        self.write_out('', write_to=["file"])       # newline
+        for trn_num in range(num_trns_in_dlg):
+            src_tokens = \
+             utils.strip_pad(self.dlgs_batch[trn_num]
+                             ['net_input']['src_tokens'][dlg_num],
+                             self.src_dict.pad())
+            src_str = self.src_dict.string(src_tokens)
+            self.write_out(
+                     f'Tr{trn_num}-S:    {src_str}', write_to=["file"],
+                     first_line_indent_lev=0, next_lines_manual_indent=True,
+                     next_lines_indent=10)
+            tgt_tokens = utils.strip_pad(self.dlgs_batch[trn_num]
+                                         ['target'][dlg_num],
+                                         self.tgt_dict.pad())
+            tgt_str = self.tgt_dict.string(tgt_tokens)
+            self.write_out(
+                     f'Tr{trn_num}-T:    {tgt_str}', write_to=["file"],
+                     first_line_indent_lev=0, next_lines_manual_indent=True,
+                     next_lines_indent=10)
+            hypo_str = self.tgt_dict.string(
+             self.hypos_batch[trn_num][dlg_num][hypo_num]
+                                               ['tokens'].cpu())
+            trn_rslt = 'P' if dlg_trn_rslt[trn_num][hypo_num].item() \
+                else 'F'
+            self.write_out(
+                     f'Tr{trn_num}-H{hypo_num}-{trn_rslt}: {hypo_str}',
+                     write_to=["file"], first_line_indent_lev=0,
+                     next_lines_manual_indent=True, next_lines_indent=10)
 
     def _update_metrics_for_dlg(self, dlg_num, dlg_trn_rslt):
         # dlg_trn_rslt: ((# of turns in dlg) x (# of hypos = beam size)) of
@@ -108,7 +109,7 @@ class DialogMetrics(object):
              f'{num_trns_in_dlg}'
              )
             self.count[strng] += 1
-            self.failed_dlg_to_file(
+            self._failed_dlg_to_file(
                     dlg_num, hypo_num, num_trns_in_dlg, dlg_trn_rslt)
 
     def hypos_per_turn(self, hypos_per_trn):
@@ -144,7 +145,7 @@ class DialogMetrics(object):
             del self.dlgs_batch
             del self.hypos_batch
 
-    def print_stats(self, write_to_file):
+    def print_stats(self):
         '''
         for num_trns_in_dlg in range(1, self.max_num_trns+1):
             self.count[f'num_dlgs_pass'] += 1
@@ -160,106 +161,105 @@ class DialogMetrics(object):
                     self.count[strng] += 1
         '''
 
-        with open('failed_dialogs_stat.txt', 'a') as failed_dialogs_stat_file:
-            with redirect_stdout(
-                    failed_dialogs_stat_file if write_to_file else sys.stdout):
+        # Statistics on dialogs that passed
+        num_dlgs_pass = self.count['num_dlgs_pass']
+        strng = '% number of dialogs that passed = ({}/{} x 100) = {:.2f}%'\
+                .format(num_dlgs_pass, self.count['num_dlgs'],
+                        num_dlgs_pass/self.count['num_dlgs'] * 100)
+        self.write_out(strng, write_to=["stdout", "file"], bullet=True,
+                       next_lines_manual_indent=False)
+        if num_dlgs_pass:
+            first_time = True
+            for num_trns_in_dlg in range(1, self.max_num_trns+1):
+                cnt_num_trns_in_dlg =\
+                        self.count[f'num_dlgs_pass {num_trns_in_dlg}']
+                if cnt_num_trns_in_dlg:
+                    if first_time:
+                        strng = (
+                         f'(# of turns in dialog: # of occurrences) = '
+                         f'({num_trns_in_dlg}: {cnt_num_trns_in_dlg})'
+                        )
+                        first_time = False
+                    else:
+                        stg = (
+                         f', ({num_trns_in_dlg}: '
+                         f'{cnt_num_trns_in_dlg})'
+                         )
+                        strng += stg
+            if not first_time:
+                self.write_out(
+                     strng, write_to=["stdout", "file"], bullet=True,
+                     first_line_indent_lev=1, next_lines_manual_indent=False)
 
-                # Statistics on dialogs that passed
-                num_dlgs_pass = self.count['num_dlgs_pass']
-                print(
-                 '** % number of dialogs that passed = ({}/{} x 100) = {:.2f}%'
-                 .format(num_dlgs_pass, self.count['num_dlgs'],
-                         num_dlgs_pass/self.count['num_dlgs'] * 100)
-                )
-                if num_dlgs_pass:
-                    first_time = True
-                    for num_trns_in_dlg in range(1, self.max_num_trns+1):
-                        cnt_num_trns_in_dlg =\
-                                self.count[f'num_dlgs_pass {num_trns_in_dlg}']
-                        if cnt_num_trns_in_dlg:
-                            if first_time:
-                                strng = (
-                                 f'(# of turns in dialog: # of occurrences) = '
-                                 f'({num_trns_in_dlg}: {cnt_num_trns_in_dlg})'
-                                )
-                                first_time = False
-                            else:
-                                stg = (
-                                 f', ({num_trns_in_dlg}: '
-                                 f'{cnt_num_trns_in_dlg})'
-                                 )
-                                strng += stg
-                    if not first_time:
-                        print(textwrap.fill(strng, width=80,
-                                            initial_indent='   ** ',
-                                            subsequent_indent='      ')
-                              )
+        # Statistics on turns of dialogs
+        strng = '% number of turns that passed = ({}/{} x 100) = {:.2f}%'\
+                .format(self.count['num_trns_pass'], self.count['num_trns'],
+                        self.count['num_trns_pass']/self.count['num_trns']
+                        * 100)
+        self.write_out(strng, write_to=["stdout", "file"], bullet=True,
+                       next_lines_manual_indent=False)
 
-                # Statistics on turns of dialogs
-                print(
-                 '** % number of turns that passed = ({}/{} x 100) = {:.2f}%'
-                 .format(self.count['num_trns_pass'], self.count['num_trns'],
-                         self.count['num_trns_pass']/self.count['num_trns']
-                         * 100)
-                )
+        # Statistics on dialogs that failed
+        num_dlgs_fail = self.count['num_dlgs_fail']
+        strng = '% number of dialogs that failed = ({}/{} x 100) = {:.2f}%'\
+                .format(num_dlgs_fail, self.count['num_dlgs'],
+                        num_dlgs_fail/self.count['num_dlgs'] * 100)
+        self.write_out(strng, write_to=["stdout", "file"], bullet=True,
+                       next_lines_manual_indent=False)
 
-                # Statistics on dialogs that failed
-                num_dlgs_fail = self.count['num_dlgs_fail']
-                print(
-                 '** % number of dialogs that failed = ({}/{} x 100) = {:.2f}%'
-                 .format(num_dlgs_fail, self.count['num_dlgs'],
-                         num_dlgs_fail/self.count['num_dlgs'] * 100)
-                )
-                if num_dlgs_fail:
-                    strng = (
-                      f'Note: hypo 0 sequence has highest probability whereas '
-                      f'hypo {self.beam_size-1} sequence has lowest '
-                      f'probability'
+        if num_dlgs_fail:
+            strng = (
+              f'Note: hypo 0 sequence has highest probability whereas '
+              f'hypo {self.beam_size-1} sequence has lowest '
+              f'probability'
+            )
+            self.write_out(strng, write_to=["stdout", "file"],
+                           first_line_indent_lev=1,
+                           next_lines_manual_indent=False)
+            for hypo_num in range(self.beam_size):
+                cnt_hypo_num = self.count[f'{hypo_num}']
+                if cnt_hypo_num:
+                    self.write_out(
+                     f'hypo = {hypo_num} , # of occurrences = {cnt_hypo_num}',
+                     write_to=["stdout", "file"], bullet=True,
+                     first_line_indent_lev=1, next_lines_manual_indent=False
                     )
-                    print(textwrap.fill(strng, width=80, initial_indent='   ',
-                                        subsequent_indent='   ')
-                          )
-                    for hypo_num in range(self.beam_size):
-                        cnt_hypo_num = self.count[f'{hypo_num}']
-                        if cnt_hypo_num:
-                            print(f'   ** hypo = {hypo_num} , # of ', end="")
-                            print(f'occurrences = {cnt_hypo_num}')
-                            first_time = True
-                            for num_trns_in_dlg in \
-                                    range(1, self.max_num_trns+1):
-                                for num_consec_trns_pass in \
-                                        range(1, num_trns_in_dlg+1):
+                    first_time = True
+                    for num_trns_in_dlg in \
+                            range(1, self.max_num_trns+1):
+                        for num_consec_trns_pass in \
+                                range(1, num_trns_in_dlg+1):
+                            stg = (
+                             f'{hypo_num} {num_consec_trns_pass} '
+                             f'{num_trns_in_dlg}'
+                             )
+                            cnt_consecTrns_per_trnsInDlg = \
+                                self.count[stg]
+                            if cnt_consecTrns_per_trnsInDlg:
+                                if first_time:
+                                    strng = (
+                                      f'(# of consecutive turns that '
+                                      f'passed, counting from '
+                                      f'beginning of dialog / # of '
+                                      f'turns in dialog: # of '
+                                      f'occurrences) = ('
+                                      f'{num_consec_trns_pass}/'
+                                      f'{num_trns_in_dlg}: '
+                                      f'{cnt_consecTrns_per_trnsInDlg}'
+                                      f')'
+                                    )
+                                    first_time = False
+                                else:
                                     stg = (
-                                     f'{hypo_num} {num_consec_trns_pass} '
-                                     f'{num_trns_in_dlg}'
-                                     )
-                                    cnt_consecTrns_per_trnsInDlg = \
-                                        self.count[stg]
-                                    if cnt_consecTrns_per_trnsInDlg:
-                                        if first_time:
-                                            strng = (
-                                              f'(# of consecutive turns that '
-                                              f'passed, counting from '
-                                              f'beginning of dialog / # of '
-                                              f'turns in dialog: # of '
-                                              f'occurrences) = ('
-                                              f'{num_consec_trns_pass}/'
-                                              f'{num_trns_in_dlg}: '
-                                              f'{cnt_consecTrns_per_trnsInDlg}'
-                                              f')'
-                                            )
-                                            first_time = False
-                                        else:
-                                            stg = (
-                                             f', ({num_consec_trns_pass}/'
-                                             f'{num_trns_in_dlg}: '
-                                             f'{cnt_consecTrns_per_trnsInDlg})'
-                                             )
-                                            strng += stg
-                            print(textwrap.fill(strng, width=80,
-                                                initial_indent='      ** ',
-                                                subsequent_indent='         ')
-                                  )
+                                     f', ({num_consec_trns_pass}/'
+                                     f'{num_trns_in_dlg}: '
+                                     f'{cnt_consecTrns_per_trnsInDlg})'
+                                    )
+                                    strng += stg
+                    self.write_out(
+                     strng, write_to=["stdout", "file"], bullet=True,
+                     first_line_indent_lev=2, next_lines_manual_indent=False
+                    )
 
     def num_dlgs(self):
         return self.count['num_dlgs']

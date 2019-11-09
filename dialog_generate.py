@@ -96,7 +96,6 @@ def main(args):
         scorer = bleu.Scorer(tgt_dict.pad(), tgt_dict.eos(), tgt_dict.unk())
     dlgs_metrics = DialogMetrics(
             src_dict, tgt_dict, args.remove_bpe, args.beam)
-    num_sentences = 0
     has_target = True
     with progress_bar.build_progress_bar(args, itr) as t:
         wps_meter = TimeMeter()
@@ -132,10 +131,12 @@ def main(args):
                         model.encoder(**{'start_dlg': False,
                                          'src_tokens': hypos_seqs,
                                          'src_lengths': hypos_seqs_len})
-                encode_hypos([seqs[0]['tokens'] for seqs in hypos_perTrn])
+                encode_hypos([hypos_perTrn_perDlg[0]['tokens']
+                              for hypos_perTrn_perDlg in hypos_perTrn])
 
                 dlgs_metrics.hypos_per_turn(hypos_perTrn)
 
+                # remaining code is for Bleu Score
                 for i, sample_id in enumerate(dlgs_batch[0]['id'].tolist()):
                     has_target = dlgsBch_perTrn['target'] is not None
 
@@ -157,12 +158,6 @@ def main(args):
                         if has_target:
                             target_str = tgt_dict.string(target_tokens, args.remove_bpe, escape_unk=True)
 
-                    if not args.quiet:
-                        if src_dict is not None:
-                            print('S-{}\t{}'.format(sample_id, src_str))
-                        if has_target:
-                            print('T-{}\t{}'.format(sample_id, target_str))
-
                     # Process top predictions
                     for j, hypo in enumerate(hypos_perTrn[i][:min(len(hypos_perTrn), args.nbest)]):
                         hypo_tokens, hypo_str, alignment = utils.post_process_prediction(
@@ -173,22 +168,6 @@ def main(args):
                             tgt_dict=tgt_dict,
                             remove_bpe=args.remove_bpe,
                         )
-
-                        if not args.quiet:
-                            print('H-{}\t{}\t{}'.format(sample_id, hypo['score'], hypo_str))
-                            print('P-{}\t{}'.format(
-                                sample_id,
-                                ' '.join(map(
-                                    lambda x: '{:.4f}'.format(x),
-                                    hypo['positional_scores'].tolist(),
-                                ))
-                            ))
-
-                            if args.print_alignment:
-                                print('A-{}\t{}'.format(
-                                    sample_id,
-                                    ' '.join(map(lambda x: str(utils.item(x)), alignment))
-                                ))
 
                         # Score only the top hypothesis
                         if has_target and j == 0:
@@ -204,26 +183,23 @@ def main(args):
                 t.log({'wps': round(wps_meter.avg)})
 
     strng = '\nStatistics on the test\n----------------------'
-    print(strng)
-    dlgs_metrics.write_to_file(strng, decorate=False)
+    dlgs_metrics.write_out(strng, write_to=["stdout", "file"])
 
     strng = 'Translated {} dialogs with {} turns and {} tokens using beam={} in {:.1f}s ({:.2f} dialogs/s, {:.2f} turns/s, {:.2f} tokens/s)'.format(
              dlgs_metrics.num_dlgs(), dlgs_metrics.num_trns(), gen_timer.n,
              args.beam, gen_timer.sum, dlgs_metrics.num_dlgs()/gen_timer.sum,
              dlgs_metrics.num_trns()/gen_timer.sum, 1./gen_timer.avg)
-    print(textwrap.fill('** ' + strng, width=80, initial_indent='',
-          subsequent_indent='    '))
-    dlgs_metrics.write_to_file(strng)
+    dlgs_metrics.write_out(strng, write_to=["stdout", "file"], bullet=True,
+                           next_lines_manual_indent=False)
 
-    dlgs_metrics.print_stats(write_to_file=False)
-    dlgs_metrics.print_stats(write_to_file=True)
+    dlgs_metrics.print_stats()
 
     if has_target:
         strng = 'Generate {} with beam={}: {}'.format(
                             args.gen_subset, args.beam, scorer.result_string())
-        print(textwrap.fill('** ' + strng, width=80, initial_indent='',
-              subsequent_indent='    '))
-    dlgs_metrics.write_to_file(strng)
+        dlgs_metrics.write_out(strng, write_to=["stdout", "file"], bullet=True,
+                               next_lines_manual_indent=False)
+
     return scorer
 
 
