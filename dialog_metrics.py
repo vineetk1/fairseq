@@ -44,10 +44,9 @@ class DialogMetrics(object):
         self.dlgs_batch = dlgs_smpl
         self.hypos_batch = []
 
-    def _failed_dlg_to_file(
-            self, dlg_num, hypo_num, num_trns_in_dlg, dlg_trn_rslt):
+    def _failed_dlg_to_file(self, dlg_num, hypo_num, dlg_trn_rslt):
         self.write_out('', write_to=["file"])       # newline
-        for trn_num in range(num_trns_in_dlg):
+        for trn_num in range(dlg_trn_rslt.size(0)):
             src_tokens = \
              utils.strip_pad(self.dlgs_batch[trn_num]
                              ['net_input']['src_tokens'][dlg_num],
@@ -109,8 +108,7 @@ class DialogMetrics(object):
              f'{num_trns_in_dlg}'
              )
             self.count[strng] += 1
-            self._failed_dlg_to_file(
-                    dlg_num, hypo_num, num_trns_in_dlg, dlg_trn_rslt)
+            self._failed_dlg_to_file(dlg_num, hypo_num, dlg_trn_rslt)
 
     def hypos_per_turn(self, hypos_per_trn):
         # hypos_per_trn: (list of (# dialogs) lists) x
