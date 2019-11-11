@@ -26,8 +26,11 @@ baseDirP = tbotDirP.parents[1]  # fairseq base directory
 dialogIndexDirP = baseDirP.joinpath(sys.argv[1]).resolve()  # data-bin/dialog
 oldDatasetDirP = tbotDirP.joinpath('dialog-bAbI-tasks')
 if not oldDatasetDirP.exists():
-    sys.exit(f'**Error** Program ended prematurely.\n\
-Run this program after downloading the dataset at {oldDatasetDirP}')
+    strng = (
+        f'**Error** Program ended prematurely.\nRun this program after '
+        f'downloading the dataset at {oldDatasetDirP}'
+    )
+    sys.exit(strng)
 
 logger.debug(f'create directories for new dataset')
 newDatasetDirP = tbotDirP.joinpath('fairseq-dialog-dataset')
@@ -74,7 +77,12 @@ for oldFileP in oldDatasetDirP.glob('dialog-babi-task*.txt'):
     newBotFile.touch(exist_ok=False)
     newHmnFile.touch(exist_ok=False)
     dialogIndexFile.touch(exist_ok=False)
-    logger.debug(f'created files: {newBotFile}, {newHmnFile}, {dialogIndexFile}')
+    print()
+    logger.debug(f'old dataset file: {oldFileP}')
+    strng = (
+       f'new dataset files: {newBotFile}, {newHmnFile}, {dialogIndexFile}'
+    )
+    logger.debug(strng)
 
     logger.debug(f'write data from old dataset file to new dataset files')
     with oldFileP.open('r') as oldFile, newBotFile.open('w') as botFile, \
@@ -92,17 +100,21 @@ for oldFileP in oldDatasetDirP.glob('dialog-babi-task*.txt'):
             except ValueError as error:
                 if prev_line_apiCall:
                     continue
-                sys.exit(f'**Error**: Missing tab separating a human \
-utterance from a bot utterance in the following file, line number, and line:\n\
-File: {oldFile}\n\
-Line #: {lineno + 1}\n\
-Line: {line}')
+                strng = (
+                   f'**Error**: Missing tab separating a human utterance from '
+                   f'a bot utterance in the following file, line number, and '
+                   f'line:\nFile: {oldFile}\nLine #: {lineno + 1}\nLine: '
+                   f'{line}'
+                )
+                sys.exit(strng)
             if not hmnLine[0].isdecimal():
-                sys.exit(f'**Error**: Missing decimal number at the beginning \
-of the line in the following file, line number, and line:\n\
-File: {oldFile}\n\
-Line #: {lineno + 1}\n\
-Line: {line}')
+                strng = (
+                   f'**Error**: Missing decimal number at the beginning of '
+                   f'the line in the following file, line number, and '
+                   f'line:\n File: {oldFile}\n Line #: {lineno + 1}\n Line: '
+                   f'{line}'
+                )
+                sys.exit(strng)
             if hmnLine[0] == '1':
                 dialogStartIndex.append(hmnBotFileLineCount)
             hmnFile.write(hmnLine.lstrip('0123456789 ')+'\n')
@@ -121,8 +133,8 @@ Line: {line}')
             logger.critical(f'line count is wrong')
     with newHmnFile.open('r') as hmnFile:
         strng = (
-          f'expected line count={hmnBotFileLineCount}, line count in file= '
-          f'{sum(1 for _ in hmnFile)}, file={newHmnFile.stem}'
+           f'file={newHmnFile.stem}: expected line count={hmnBotFileLineCount}'
+           f', line count in file={sum(1 for _ in hmnFile)}'
         )
         logger.debug(strng)
 
