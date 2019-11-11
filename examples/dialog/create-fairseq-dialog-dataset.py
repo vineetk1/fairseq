@@ -21,9 +21,9 @@ console.setFormatter(formatter)
 logger.addHandler(console)
 
 # In general, try-except is not used because cannot recover from those failures
-tbotDirP = pathlib.Path(sys.argv[0]).parents[0].resolve()
+tbotDirP = pathlib.Path(sys.argv[0]).parents[0].resolve()   # examples/dialog
 baseDirP = tbotDirP.parents[1]  # fairseq base directory
-dialogIndexDirP = baseDirP.joinpath(sys.argv[1]).resolve()
+dialogIndexDirP = baseDirP.joinpath(sys.argv[1]).resolve()  # data-bin/dialog
 oldDatasetDirP = tbotDirP.joinpath('dialog-bAbI-tasks')
 if not oldDatasetDirP.exists():
     sys.exit(f'**Error** Program ended prematurely.\n\
@@ -33,10 +33,10 @@ logger.debug(f'create directories for new dataset')
 newDatasetDirP = tbotDirP.joinpath('fairseq-dialog-dataset')
 shutil.rmtree(newDatasetDirP, ignore_errors=True)
 shutil.rmtree(dialogIndexDirP, ignore_errors=True)
-fileNameCmpnts0 = {'task1', 'task1-OOV'}
+fileNameCmpnts0 = {'task6'}
 # fileNameCmpnts0 = {'task1', 'task1-OOV', 'task2', 'task2-OOV', 'task3',
 #                   'task3-OOV', 'task4', 'task4-OOV', 'task5',
-#                   'task5-OOV', 'task6'}
+#                   'task5-OOV', 'task6-dstc2'}
 fileNameCmpnts1 = {'dev', 'trn', 'tst'}
 fileNameCmpnts1Dict = {'dev': 'valid', 'trn': 'train', 'tst': 'test'}
 fileNameCmpnts2 = {'OOV'}
@@ -74,6 +74,7 @@ for oldFileP in oldDatasetDirP.glob('dialog-babi-task*.txt'):
     newBotFile.touch(exist_ok=False)
     newHmnFile.touch(exist_ok=False)
     dialogIndexFile.touch(exist_ok=False)
+    logger.debug(f'created files: {newBotFile}, {newHmnFile}, {dialogIndexFile}')
 
     logger.debug(f'write data from old dataset file to new dataset files')
     with oldFileP.open('r') as oldFile, newBotFile.open('w') as botFile, \
@@ -81,12 +82,16 @@ for oldFileP in oldDatasetDirP.glob('dialog-babi-task*.txt'):
             dialogIndexFile.open('wb') as dialogFile:
         hmnBotFileLineCount = 0
         dialogStartIndex = []   # record line numbers where dialogs start
+        prev_line_apiCall = False
         for lineno, line in enumerate(oldFile):
             if line == '\n':
                 continue
             try:
                 hmnLine, botLine = line.split('\t')
+                prev_line_apiCall = False
             except ValueError as error:
+                if prev_line_apiCall:
+                    continue
                 sys.exit(f'**Error**: Missing tab separating a human \
 utterance from a bot utterance in the following file, line number, and line:\n\
 File: {oldFile}\n\
@@ -102,6 +107,8 @@ Line: {line}')
                 dialogStartIndex.append(hmnBotFileLineCount)
             hmnFile.write(hmnLine.lstrip('0123456789 ')+'\n')
             botFile.write(botLine)
+            if 'api_call' in botLine:
+                prev_line_apiCall = True
             hmnBotFileLineCount += 1
         pickle.dump(dialogStartIndex, dialogFile)
 
@@ -113,12 +120,15 @@ Line: {line}')
         if hmnBotFileLineCount - sum(1 for _ in hmnFile):
             logger.critical(f'line count is wrong')
     with newHmnFile.open('r') as hmnFile:
-         logger.debug(f'line count={hmnBotFileLineCount}, line count in file= {sum(1 for _ in hmnFile)}, file={newHmnFile.stem}')
+        strng = (
+          f'expected line count={hmnBotFileLineCount}, line count in file= '
+          f'{sum(1 for _ in hmnFile)}, file={newHmnFile.stem}'
+        )
+        logger.debug(strng)
 
     with dialogIndexFile.open('rb') as dialogFile:
         dialogIndexList = pickle.load(dialogFile)
         logger.debug(
                 f'dialog index {dialogIndexList[0:5], dialogIndexList[-5:]}')
-logger.debug(f'successfully done')
 
 # cannot do statistics on files because text is not tokenized
