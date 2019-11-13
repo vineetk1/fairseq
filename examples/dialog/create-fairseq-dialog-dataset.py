@@ -107,7 +107,16 @@ for oldFileP in oldDatasetDirP.glob('dialog-babi-task*.txt'):
                    f'{line}'
                 )
                 sys.exit(strng)
-            if not hmnLine[0].isdecimal():
+            if hmnLine is '' or botLine is '':
+                strng = (
+                   f'**Error**: Null string either before or after the tab '
+                   f'character in the following file, line number, and '
+                   f'line:\n File: {oldFile}\n Line #: {lineno + 1}\n Line: '
+                   f'{line}'
+                )
+                sys.exit(strng)
+            hmnLineSplt = hmnLine.split()
+            if not hmnLineSplt[0].isdecimal():
                 strng = (
                    f'**Error**: Missing decimal number at the beginning of '
                    f'the line in the following file, line number, and '
@@ -115,12 +124,12 @@ for oldFileP in oldDatasetDirP.glob('dialog-babi-task*.txt'):
                    f'{line}'
                 )
                 sys.exit(strng)
-            if hmnLine[0] == '1':
+            if hmnLineSplt[0] == '1':
                 dialogStartIndex.append(hmnBotFileLineCount)
             hmnFile.write(hmnLine.lstrip('0123456789 ')+'\n')
             botFile.write(botLine)
-            if 'api_call' in botLine:
-                prev_line_apiCall = True
+            prev_line_apiCall = True if 'api_call' in botLine else False
+
             hmnBotFileLineCount += 1
         pickle.dump(dialogStartIndex, dialogFile)
 
@@ -133,14 +142,18 @@ for oldFileP in oldDatasetDirP.glob('dialog-babi-task*.txt'):
             logger.critical(f'line count is wrong')
     with newHmnFile.open('r') as hmnFile:
         strng = (
-           f'file={newHmnFile.stem}: expected line count={hmnBotFileLineCount}'
+           f'file={newHmnFile.stem}: expected'
+           f'line count={hmnBotFileLineCount}'
            f', line count in file={sum(1 for _ in hmnFile)}'
         )
         logger.debug(strng)
 
     with dialogIndexFile.open('rb') as dialogFile:
         dialogIndexList = pickle.load(dialogFile)
+        logger.debug(f'Number of dialogs = {len(dialogIndexList)}')
         logger.debug(
-                f'dialog index {dialogIndexList[0:5], dialogIndexList[-5:]}')
+                f'first 10 dialog index {dialogIndexList[0:10]}')
+        logger.debug(
+                f'last 10 dialog index {dialogIndexList[-10:]}')
 
 # cannot do statistics on files because text is not tokenized
