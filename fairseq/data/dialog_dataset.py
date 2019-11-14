@@ -14,8 +14,8 @@ from . import data_utils, FairseqDataset
 
 
 def collate(
-    dlgs, pad_idx, eos_idx, left_pad_source=True, left_pad_target=False,
-    input_feeding=True,
+    dlgs, dialog_index, pad_idx, eos_idx, left_pad_source=True,
+    left_pad_target=False, input_feeding=True
 ):
     if len(dlgs) == 0:
         return {}
@@ -38,7 +38,7 @@ def collate(
         )
 
     batch = []
-    dlg_ids = torch.LongTensor([dlg['dlg_id'] for dlg in dlgs])
+    dlg_idxs = torch.LongTensor([dialog_index[dlg['dlg_id']] for dlg in dlgs])
     max_num_seqs_in_dlgs = max([len(dlg['source']) for dlg in dlgs])
     assert max_num_seqs_in_dlgs == max([len(dlg['target']) for dlg in dlgs])
     for seq_num_in_dlgs in range(max_num_seqs_in_dlgs):
@@ -71,7 +71,7 @@ def collate(
             ntokens = sum(src_lengths).item()
 
         batch.append({
-            'id': dlg_ids,
+            'id': dlg_idxs,
             'numDialogs': len(dlgs),
             'maxNumSentencesInDialog': max_num_seqs_in_dlgs,
             'sentenceNum': seq_num_in_dlgs,
@@ -225,7 +225,8 @@ class dialogDataset(FairseqDataset):
                   appear on the left if *left_pad_target* is ``True``.
         """
         return collate(
-            samples, pad_idx=self.src_dict.pad(), eos_idx=self.src_dict.eos(),
+            samples, self.dialog_index, pad_idx=self.src_dict.pad(),
+            eos_idx=self.src_dict.eos(),
             left_pad_source=self.left_pad_source,
             left_pad_target=self.left_pad_target,
             input_feeding=self.input_feeding,
