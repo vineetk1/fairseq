@@ -16,7 +16,8 @@ logger.setLevel(logging.DEBUG)      # DEBUG INFO WARN ERROR/EXCEPTION CRITICAL
 console = logging.StreamHandler()
 console.setLevel(logging.DEBUG)     # DEBUG INFO WARN ERROR/EXCEPTION CRITICAL
 formatter = logging.Formatter(
-        '%(levelname)-6s %(filename)s:%(lineno)s:%(funcName)s(): %(message)s')
+        '%(levelname)s:%(lineno)s: %(message)s')
+#        '%(levelname)-6s %(filename)s:%(lineno)s:%(funcName)s(): %(message)s')
 console.setFormatter(formatter)
 logger.addHandler(console)
 
@@ -142,7 +143,7 @@ for oldFileP in oldDatasetDirP.glob('dialog-babi-task*.txt'):
             logger.critical(f'line count is wrong')
     with newHmnFile.open('r') as hmnFile:
         strng = (
-           f'file={newHmnFile.stem}: expected'
+           f'file={newHmnFile.stem}: expected '
            f'line count={hmnBotFileLineCount}'
            f', line count in file={sum(1 for _ in hmnFile)}'
         )
@@ -152,8 +153,8 @@ for oldFileP in oldDatasetDirP.glob('dialog-babi-task*.txt'):
         dialogIndexList = pickle.load(dialogFile)
         logger.debug(f'Number of dialogs = {len(dialogIndexList)}')
         logger.debug(
-                f'first 10 dialog index {dialogIndexList[0:10]}')
+                f'first 20 dialog index {dialogIndexList[0:20]}')
         logger.debug(
-                f'last 10 dialog index {dialogIndexList[-10:]}')
+                f'last 20 dialog index {dialogIndexList[-20:]}')
 
 # cannot do statistics on files because text is not tokenized
