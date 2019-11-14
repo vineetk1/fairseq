@@ -25,6 +25,7 @@ class DialogMetrics(object):
             pass
         self.write_out('Abbrevations:\n-------------', write_to=["file"])
         strng = (
+                f'Line # (L) of the line in hmn and bot test files;'
                 f'Pass (P); Fail (F); Turn (Tr); Source Sequence (S);'
                 f' Target Sequence (T); Hypothesis Sequence: (H0) has '
                 f'highest probability, (H1) has next hightest '
@@ -46,6 +47,8 @@ class DialogMetrics(object):
 
     def _failed_dlg_to_file(self, dlg_num, hypo_num, dlg_trn_rslt):
         self.write_out('', write_to=["file"])       # newline
+        line_num = self.dlgs_batch[0]['id'][dlg_num].item()
+        self.write_out(f'\nL{line_num}', write_to=["file"])
         for trn_num in range(dlg_trn_rslt.size(0)):
             src_tokens = \
              utils.strip_pad(self.dlgs_batch[trn_num]
@@ -53,7 +56,7 @@ class DialogMetrics(object):
                              self.src_dict.pad())
             src_str = self.src_dict.string(src_tokens)
             self.write_out(
-                     f'Tr{trn_num}-S:    {src_str}', write_to=["file"],
+                     f'Tr{trn_num+1}-S:    {src_str}', write_to=["file"],
                      first_line_indent_lev=0, next_lines_manual_indent=True,
                      next_lines_indent=10)
             tgt_tokens = utils.strip_pad(self.dlgs_batch[trn_num]
@@ -61,7 +64,7 @@ class DialogMetrics(object):
                                          self.tgt_dict.pad())
             tgt_str = self.tgt_dict.string(tgt_tokens)
             self.write_out(
-                     f'Tr{trn_num}-T:    {tgt_str}', write_to=["file"],
+                     f'Tr{trn_num+1}-T:    {tgt_str}', write_to=["file"],
                      first_line_indent_lev=0, next_lines_manual_indent=True,
                      next_lines_indent=10)
             hypo_str = self.tgt_dict.string(
@@ -70,7 +73,7 @@ class DialogMetrics(object):
             trn_rslt = 'P' if dlg_trn_rslt[trn_num][hypo_num].item() \
                 else 'F'
             self.write_out(
-                     f'Tr{trn_num}-H{hypo_num}-{trn_rslt}: {hypo_str}',
+                     f'Tr{trn_num+1}-H{hypo_num}-{trn_rslt}: {hypo_str}',
                      write_to=["file"], first_line_indent_lev=0,
                      next_lines_manual_indent=True, next_lines_indent=10)
 
