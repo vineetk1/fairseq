@@ -183,22 +183,22 @@ def main(args):
                 t.log({'wps': round(wps_meter.avg)})
 
     strng = '\nStatistics on the test\n----------------------'
-    dlgs_metrics.write_out(strng, write_to=["stdout", "file"])
+    dlgs_metrics.write_out(strng, write_to=["stdout", "passF", "failF"])
 
     strng = 'Translated {} dialogs with {} turns and {} tokens using beam={} in {:.1f}s ({:.2f} dialogs/s, {:.2f} turns/s, {:.2f} tokens/s)'.format(
              dlgs_metrics.num_dlgs(), dlgs_metrics.num_trns(), gen_timer.n,
              args.beam, gen_timer.sum, dlgs_metrics.num_dlgs()/gen_timer.sum,
              dlgs_metrics.num_trns()/gen_timer.sum, 1./gen_timer.avg)
-    dlgs_metrics.write_out(strng, write_to=["stdout", "file"], bullet=True,
-                           next_lines_manual_indent=False)
+    dlgs_metrics.write_out(strng, write_to=["stdout", "passF", "failF"],
+                           bullet=True, next_lines_manual_indent=False)
 
-    dlgs_metrics.print_stats()
+    dlgs_metrics.print_stats(write_to=["stdout", "passF", "failF"])
 
     if has_target:
         strng = 'Generate {} with beam={}: {}'.format(
                             args.gen_subset, args.beam, scorer.result_string())
-        dlgs_metrics.write_out(strng, write_to=["stdout", "file"], bullet=True,
-                               next_lines_manual_indent=False)
+        dlgs_metrics.write_out(strng, write_to=["stdout", "passF", "failF"],
+                               bullet=True, next_lines_manual_indent=False)
 
     return scorer
 

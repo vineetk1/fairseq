@@ -9,6 +9,7 @@ from itertools import takewhile
 import sys
 from contextlib import redirect_stdout
 import textwrap
+import os
 
 
 class DialogMetrics(object):
@@ -20,10 +21,13 @@ class DialogMetrics(object):
         self.beam_size = beam_size
         self.count = Counter()
         self.max_num_trns = 0
-        # clear file if it exists; create file if not already created
+        # clear files if they exists; create files if not already created
         with open('failed_dialogs_stat.txt', 'w'):
             pass
-        self.write_out('Abbrevations:\n-------------', write_to=["file"])
+        with open('passed_dialogs_stat.txt', 'w'):
+            pass
+        self.write_out('Abbrevations:\n-------------',
+                       write_to=["passF", "failF"])
         strng = (
                 f'Line # (L) of the line in hmn and bot test files;'
                 f'Pass (P); Fail (F); Turn (Tr); Source Sequence (S);'
@@ -31,7 +35,7 @@ class DialogMetrics(object):
                 f'highest probability, (H1) has next hightest '
                 f'probability, etc.'
         )
-        self.write_out(strng, write_to=["file"],
+        self.write_out(strng, write_to=["passF", "failF"],
                        next_lines_manual_indent=False)
 
     def dialogs_batch(self, dlgs_smpl):
@@ -45,10 +49,9 @@ class DialogMetrics(object):
         self.dlgs_batch = dlgs_smpl
         self.hypos_batch = []
 
-    def _failed_dlg_to_file(self, dlg_num, hypo_num, dlg_trn_rslt):
-        self.write_out('', write_to=["file"])       # newline
+    def _dlg_info_to_file(self, dlg_num, hypo_num, dlg_trn_rslt, write_to):
         line_num = self.dlgs_batch[0]['id'][dlg_num].item()
-        self.write_out(f'\nL{line_num}', write_to=["file"])
+        self.write_out(f'\nL{line_num+1}', write_to)
         for trn_num in range(dlg_trn_rslt.size(0)):
             src_tokens = \
              utils.strip_pad(self.dlgs_batch[trn_num]
@@ -56,7 +59,7 @@ class DialogMetrics(object):
                              self.src_dict.pad())
             src_str = self.src_dict.string(src_tokens)
             self.write_out(
-                     f'Tr{trn_num+1}-S:    {src_str}', write_to=["file"],
+                     f'Tr{trn_num+1}-S:    {src_str}', write_to,
                      first_line_indent_lev=0, next_lines_manual_indent=True,
                      next_lines_indent=10)
             tgt_tokens = utils.strip_pad(self.dlgs_batch[trn_num]
@@ -64,7 +67,7 @@ class DialogMetrics(object):
                                          self.tgt_dict.pad())
             tgt_str = self.tgt_dict.string(tgt_tokens)
             self.write_out(
-                     f'Tr{trn_num+1}-T:    {tgt_str}', write_to=["file"],
+                     f'Tr{trn_num+1}-T:    {tgt_str}', write_to,
                      first_line_indent_lev=0, next_lines_manual_indent=True,
                      next_lines_indent=10)
             hypo_str = self.tgt_dict.string(
@@ -74,7 +77,7 @@ class DialogMetrics(object):
                 else 'F'
             self.write_out(
                      f'Tr{trn_num+1}-H{hypo_num}-{trn_rslt}: {hypo_str}',
-                     write_to=["file"], first_line_indent_lev=0,
+                     write_to, first_line_indent_lev=0,
                      next_lines_manual_indent=True, next_lines_indent=10)
 
     def _update_metrics_for_dlg(self, dlg_num, dlg_trn_rslt):
@@ -93,6 +96,8 @@ class DialogMetrics(object):
             self.count[f'num_trns_pass'] += num_trns_in_dlg
             self.count[f'num_dlgs_pass'] += 1
             self.count[f'num_dlgs_pass {num_trns_in_dlg}'] += 1
+            self._dlg_info_to_file(dlg_num, 0, dlg_trn_rslt,
+                                   write_to=["passF"])
         else:
             self.count[f'num_dlgs_fail'] += 1
             self.count[f'num_trns_pass'] += sum(
@@ -111,7 +116,8 @@ class DialogMetrics(object):
              f'{num_trns_in_dlg}'
              )
             self.count[strng] += 1
-            self._failed_dlg_to_file(dlg_num, hypo_num, dlg_trn_rslt)
+            self._dlg_info_to_file(dlg_num, hypo_num, dlg_trn_rslt,
+                                   write_to=["failF"])
 
     def hypos_per_turn(self, hypos_per_trn):
         # hypos_per_trn: (list of (# dialogs) lists) x
@@ -146,7 +152,7 @@ class DialogMetrics(object):
             del self.dlgs_batch
             del self.hypos_batch
 
-    def print_stats(self):
+    def print_stats(self, write_to):
         '''
         for num_trns_in_dlg in range(1, self.max_num_trns+1):
             self.count[f'num_dlgs_pass'] += 1
@@ -167,8 +173,8 @@ class DialogMetrics(object):
         strng = '% number of dialogs that passed = ({}/{} x 100) = {:.2f}%'\
                 .format(num_dlgs_pass, self.count['num_dlgs'],
                         num_dlgs_pass/self.count['num_dlgs'] * 100)
-        self.write_out(strng, write_to=["stdout", "file"], bullet=True,
-                       next_lines_manual_indent=False)
+        self.write_out(
+                strng, write_to, bullet=True, next_lines_manual_indent=False)
         if num_dlgs_pass:
             first_time = True
             for num_trns_in_dlg in range(1, self.max_num_trns+1):
@@ -189,24 +195,24 @@ class DialogMetrics(object):
                         strng += stg
             if not first_time:
                 self.write_out(
-                     strng, write_to=["stdout", "file"], bullet=True,
-                     first_line_indent_lev=1, next_lines_manual_indent=False)
+                     strng, write_to, bullet=True, first_line_indent_lev=1,
+                     next_lines_manual_indent=False)
 
         # Statistics on turns of dialogs
         strng = '% number of turns that passed = ({}/{} x 100) = {:.2f}%'\
                 .format(self.count['num_trns_pass'], self.count['num_trns'],
                         self.count['num_trns_pass']/self.count['num_trns']
                         * 100)
-        self.write_out(strng, write_to=["stdout", "file"], bullet=True,
-                       next_lines_manual_indent=False)
+        self.write_out(
+                strng, write_to, bullet=True, next_lines_manual_indent=False)
 
         # Statistics on dialogs that failed
         num_dlgs_fail = self.count['num_dlgs_fail']
         strng = '% number of dialogs that failed = ({}/{} x 100) = {:.2f}%'\
                 .format(num_dlgs_fail, self.count['num_dlgs'],
                         num_dlgs_fail/self.count['num_dlgs'] * 100)
-        self.write_out(strng, write_to=["stdout", "file"], bullet=True,
-                       next_lines_manual_indent=False)
+        self.write_out(
+                strng, write_to, bullet=True, next_lines_manual_indent=False)
 
         if num_dlgs_fail:
             strng = (
@@ -214,16 +220,15 @@ class DialogMetrics(object):
               f'hypo {self.beam_size-1} sequence has lowest '
               f'probability'
             )
-            self.write_out(strng, write_to=["stdout", "file"],
-                           first_line_indent_lev=1,
+            self.write_out(strng, write_to, first_line_indent_lev=1,
                            next_lines_manual_indent=False)
             for hypo_num in range(self.beam_size):
                 cnt_hypo_num = self.count[f'{hypo_num}']
                 if cnt_hypo_num:
                     self.write_out(
                      f'hypo = {hypo_num} , # of occurrences = {cnt_hypo_num}',
-                     write_to=["stdout", "file"], bullet=True,
-                     first_line_indent_lev=1, next_lines_manual_indent=False
+                     write_to, bullet=True, first_line_indent_lev=1,
+                     next_lines_manual_indent=False
                     )
                     first_time = True
                     for num_trns_in_dlg in \
@@ -258,8 +263,8 @@ class DialogMetrics(object):
                                     )
                                     strng += stg
                     self.write_out(
-                     strng, write_to=["stdout", "file"], bullet=True,
-                     first_line_indent_lev=2, next_lines_manual_indent=False
+                     strng, write_to, bullet=True, first_line_indent_lev=2,
+                     next_lines_manual_indent=False
                     )
 
     def num_dlgs(self):
@@ -279,10 +284,19 @@ class DialogMetrics(object):
         else:
             next_line_space = (len(init_space) + 1) * " "
 
-        with open('failed_dialogs_stat.txt', 'a') as failed_dialogs_stat_file:
-            for out in write_to:
+        for out in write_to:
+            if out is "passF":
+                out = 'passed_dialogs_stat.txt'
+            elif out is "failF":
+                out = 'failed_dialogs_stat.txt'
+            elif out is "stdout":
+                pass
+            else:
+                assert False, f'Illegal argument \'{out}\' in method write_out'
+            with open(os.devnull if out is 'stdout' else out, 'a') \
+                    as dialogs_stat_file:
                 with redirect_stdout(
-                 failed_dialogs_stat_file if out is 'file' else sys.stdout):
+                 sys.stdout if out is 'stdout' else dialogs_stat_file):
                     if init_space or next_line_space:
                         print(textwrap.fill(
                          strng, width=80, initial_indent=init_space,
