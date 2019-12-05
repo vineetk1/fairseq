@@ -28,7 +28,7 @@ $ python3 preprocess.py --task dialog_task --source-lang hmn --target-lang bot -
 # in the directory "checkpoints/dialog/task1" must be removed, otherwise training
 # will resume from the last best checkpoint model
 $ rm -r checkpoints
-$ CUDA_VISIBLE_DEVICES=0 python3 -m pdb train.py --task dialog_task data-bin/dialog/task6 --arch dialog_lstm_model --save-dir checkpoints/dialog/task6 --max-tokens 4000 --required-batch-size-multiple 1 --criterion label_smoothed_cross_entropy --label-smoothing 0.1 --optimizer nag --lr-scheduler fixed --force-anneal 200 --lr 0.25 --clip-norm 0.1 --min-lr 2.47033e-322
+$ CUDA_VISIBLE_DEVICES=0 python3 -m pdb train.py --task dialog_task data-bin/dialog/task6 --arch dialog_lstm_model --save-dir checkpoints/dialog/task6 --max-tokens 8192 --required-batch-size-multiple 1 --criterion label_smoothed_cross_entropy --label-smoothing 0.1 --optimizer nag --lr-scheduler fixed --force-anneal 200 --lr 0.25 --clip-norm 0.1 --min-lr 2.47033e-200
 
 # (6) Generate:
 $ python3 -m pdb dialog_generate.py --task dialog_task data-bin/dialog/task6 --path checkpoints/dialog/task6/checkpoint_best.pt --batch-size 128 --beam 5

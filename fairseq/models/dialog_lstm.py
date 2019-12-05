@@ -151,20 +151,24 @@ class AttentionLayer(nn.Module):
     def __init__(self, input_embed_dim, source_embed_dim, output_embed_dim,
                  bias=False):
         super().__init__()
-
-        self.input_proj = Linear(input_embed_dim, source_embed_dim, bias=bias)
+        self.input_proj = Linear(
+               input_embed_dim + source_embed_dim, source_embed_dim, bias=bias)
         self.output_proj = Linear(
                input_embed_dim + source_embed_dim, output_embed_dim, bias=bias)
+        self.v = nn.Parameter(torch.rand(source_embed_dim, dtype=torch.float32)
+                              .uniform_(-0.1, 0.1))
 
     def forward(self, input, source_hids, encoder_padding_mask):
-        # input: bsz x input_embed_dim
-        # source_hids: srclen x bsz x output_embed_dim
+        # input: bsz x input_embed_dim  [B, Ci]
+        # source_hids: srclen x bsz x source_embed_dim  [T, B, C]
+        # encoder_padding_mask: srclen x bsz    [T, B]
 
-        # x: bsz x output_embed_dim
-        x = self.input_proj(input)
-
-        # compute attention
-        attn_scores = (source_hids * x.unsqueeze(0)).sum(dim=2)
+        def attn_scores(input, source_hids):
+            input = input.repeat(source_hids.size(0), 1, 1)   # [T, B, Ci]
+            x = (torch.tanh(self.input_proj(torch.cat((
+                input, source_hids), -1)))).transpose(1, 2)    # [T, C, B]
+            return torch.matmul(self.v, x)  # [C] x [T, C, B] = [T, 1, B]=[T,B]
+        attn_scores = attn_scores(input, source_hids)
 
         # don't attend over padding
         if encoder_padding_mask is not None:
@@ -173,11 +177,13 @@ class AttentionLayer(nn.Module):
                 float('-inf')
             ).type_as(attn_scores)  # FP16 support: cast to float and back
 
-        attn_scores = F.softmax(attn_scores, dim=0)  # srclen x bsz
+        # normalized attn_scores
+        attn_scores = F.softmax(attn_scores, dim=0)  # [T, B]
 
-        # sum weighted sources
-        x = (attn_scores.unsqueeze(2) * source_hids).sum(dim=0)
+        # generate attention-vector as sum weighted source
+        x = (attn_scores.unsqueeze(2) * source_hids).sum(dim=0)  # [B, C]
 
+        # generate context-vector; [B, Co]
         x = torch.tanh(self.output_proj(torch.cat((x, input), dim=1)))
         return x, attn_scores
 
