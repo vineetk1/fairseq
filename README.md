@@ -3,4 +3,11 @@ This implementation of a Transaction Bot deals with a dialog between a human use
 
 The implementation is based on the paper: <a href="https://arxiv.org/pdf/1701.04024.pdf" target="_blank">Eric, M., & Manning, C. D. (2017). A copy-augmented sequence-to-sequence architecture gives good performance on task-oriented dialogue. arXiv preprint arXiv:1701.04024</a>. It includes an end-to-end trainable, LSTM-based Encoder-Decoder with Attention.
 # Requirements
-
+PyTorch version >= 1.2.0
+Python version >= 3.6
+# Installation
+```
+git clone https://github.com/pytorch/fairseq
+cd fairseq
+pip install --editable .
+```
