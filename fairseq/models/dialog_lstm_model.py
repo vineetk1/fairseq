@@ -277,10 +277,10 @@ def lstm_dialog(args):
                             args, 'share_decoder_input_output_embed', False)
     args.share_all_embeddings = getattr(args, 'share_all_embeddings', False)
 
-    args.encoder_hidden_size = getattr(args, 'encoder_hidden_size', 253)
-    args.encoder_layers = getattr(args, 'encoder_layers', 3)
+    args.encoder_hidden_size = getattr(args, 'encoder_hidden_size', 353)
+    args.encoder_layers = getattr(args, 'encoder_layers', 2)
     args.encoder_bidirectional = getattr(args, 'encoder_bidirectional', True)
-    args.dropout = getattr(args, 'dropout', 0.1)
+    args.dropout = getattr(args, 'dropout', 0.3)
     args.encoder_dropout_in = getattr(args, 'encoder_dropout_in', args.dropout)
     args.encoder_dropout_out = getattr(
                                     args, 'encoder_dropout_out', args.dropout)
