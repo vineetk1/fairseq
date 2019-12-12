@@ -7,7 +7,8 @@ PyTorch version >= 1.2.0
 Python version >= 3.6
 # Installation
 ```
-git clone https://github.com/pytorch/fairseq
+git clone https://github.com/vineetk1/fairseq.git
 cd fairseq
 pip install --editable .
 ```
+# Getting Started
