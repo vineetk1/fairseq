@@ -12,9 +12,9 @@ import logging
 import pickle
 
 logger = logging.getLogger()
-logger.setLevel(logging.DEBUG)      # DEBUG INFO WARN ERROR/EXCEPTION CRITICAL
+logger.setLevel(logging.INFO)      # DEBUG INFO WARN ERROR/EXCEPTION CRITICAL
 console = logging.StreamHandler()
-console.setLevel(logging.DEBUG)     # DEBUG INFO WARN ERROR/EXCEPTION CRITICAL
+console.setLevel(logging.INFO)     # DEBUG INFO WARN ERROR/EXCEPTION CRITICAL
 formatter = logging.Formatter(
         '%(levelname)s:%(lineno)s: %(message)s')
 #        '%(levelname)-6s %(filename)s:%(lineno)s:%(funcName)s(): %(message)s')
