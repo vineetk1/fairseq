@@ -22,7 +22,7 @@ cd examples/dialog
 ```
 tar zxvf dialog-bAbI-tasks_1_.tgz
 ```
-Verify that the dataset is in directory **fairseq/examples/dialog/dialog-bAbI-tasks**.   
+Verify that the dataset is in directory *fairseq/examples/dialog/dialog-bAbI-tasks*.   
 ### Convert dataset to fairseq dataset format
 Verify that the current working directory is **fairseq/examples/dialog**.  
 ```
