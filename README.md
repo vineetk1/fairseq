@@ -40,6 +40,7 @@ cd pretrained-word-vectors
 1. Download *glove.6B.zip* in directory *fairseq/examples/dialog/pretrained-word-vectors*
 ```
 unzip glove.6B.zip
+rm glove.6B.zip
 cd ../../..
 ```
 Verify that the pretrained vectors are in directory *fairseq/examples/dialog/pretrained-word-vectors*.    
