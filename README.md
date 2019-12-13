@@ -11,4 +11,10 @@ git clone https://github.com/vineetk1/fairseq.git
 cd fairseq
 pip install --editable .
 ```
-# Getting Started
+# Training a new model
+### Download dataset
+1. Go to https://fb-public.app.box.com/s/chnq60iivzv5uckpvj2n2vijlyepze6w 
+1. Download dialog-bAbI-tasks_1_.tgz in directory fairseq/examples/dialog
+```
+tar zxvf dialog-bAbI-tasks_1_.tgz
+```
