@@ -18,7 +18,7 @@ Verify that the current working directory is **fairseq**.
 cd examples/dialog
 ```
 1. Go to https://fb-public.app.box.com/s/chnq60iivzv5uckpvj2n2vijlyepze6w 
-1. Download dialog-bAbI-tasks_1_.tgz in directory **fairseq/examples/dialog**  
+1. Download **dialog-bAbI-tasks_1_.tgz** in directory **fairseq/examples/dialog**  
 ```
 tar zxvf dialog-bAbI-tasks_1_.tgz
 ```
@@ -36,7 +36,7 @@ mkdir pretrained-word-vectors
 cd pretrained-word-vectors
 ```
 1. Go to https://nlp.stanford.edu/projects/glove/
-1. Download glove.6B.zip in directory fairseq/examples/dialog/pretrained-word-vectors
+1. Download **glove.6B.zip** in directory **fairseq/examples/dialog/pretrained-word-vectors**
 ```
 unzip glove.6B.zip
 cd ../../..
