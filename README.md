@@ -12,13 +12,31 @@ cd fairseq
 pip install --editable .
 ```
 # Training a new model
-### Download dataset
+###   Download dataset
+Check that the current working directory is fairseq/examples/dialog
 1. Go to https://fb-public.app.box.com/s/chnq60iivzv5uckpvj2n2vijlyepze6w 
 1. Download dialog-bAbI-tasks_1_.tgz in directory fairseq/examples/dialog
 ```
 tar zxvf dialog-bAbI-tasks_1_.tgz
 ```
-### Convert dataset to fairseq format
+Check that the dataset is in directory fairseq/examples/dialog/dialog-bAbI-tasks
+###   Convert dataset to fairseq format
+Check that the current working directory is fairseq/examples/dialog
 ```
 python3 create-fairseq-dialog-dataset.py data-bin/dialog
 ```
+Check that the converted dataset is in directory fairseq/examples/dialog/fairseq-dialog-dataset/task6
+###   Download pretrained word vectors
+python3 create-fairseq-dialog-dataset.py data-bin/dialog
+```
+mkdir pretrained-word-vectors
+cd pretrained-word-vectors
+```
+1. Go to https://nlp.stanford.edu/projects/glove/
+1. Download glove.6B.zip; it will take some time to download
+```
+unzip glove.6B.zip
+cd ../../..
+```
+Check that the pretrained vectors are in directory fairseq/examples/dialog/pretrained-word-vectors
+Check that the current working directory is fairseq
