@@ -9,7 +9,7 @@ The implementation is based on the paper: <a href="https://arxiv.org/pdf/1701.04
 ```
 git clone https://github.com/vineetk1/fairseq.git
 cd fairseq
-pip install --editable .
+pip3 install --editable .
 ```
 # Training a new model
 ### Download dataset
