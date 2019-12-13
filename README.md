@@ -13,7 +13,7 @@ pip install --editable .
 ```
 # Training a new model
 ### Download dataset
-Check that the current working directory is fairseq
+Check that the current working directory is fairseq.
 ```
 cd examples/dialog
 ```
@@ -22,15 +22,15 @@ cd examples/dialog
 ```
 tar zxvf dialog-bAbI-tasks_1_.tgz
 ```
-Check that the dataset is in directory fairseq/examples/dialog/dialog-bAbI-tasks
+Check that the dataset is in directory fairseq/examples/dialog/dialog-bAbI-tasks.
 ### Convert dataset to fairseq dataset format
-Check that the current working directory is fairseq/examples/dialog
+Check that the current working directory is fairseq/examples/dialog.
 ```
 python3 create-fairseq-dialog-dataset.py data-bin/dialog
 ```
-Check that the converted dataset is in directory fairseq/examples/dialog/fairseq-dialog-dataset/task6
+Check that the converted dataset is in directory fairseq/examples/dialog/fairseq-dialog-dataset/task6.
 ### Download pretrained word vectors
-Check that the current working directory is fairseq/examples/dialog
+Check that the current working directory is fairseq/examples/dialog.
 ```
 mkdir pretrained-word-vectors
 cd pretrained-word-vectors
@@ -41,8 +41,8 @@ cd pretrained-word-vectors
 unzip glove.6B.zip
 cd ../../..
 ```
-Check that the pretrained vectors are in directory fairseq/examples/dialog/pretrained-word-vectors
-Check that the current working directory is fairseq
+Check that the pretrained vectors are in directory fairseq/examples/dialog/pretrained-word-vectors.    
+Check that the current working directory is fairseq.
 ### Preprocess/binarize the data
 '''
 TEXT=examples/dialog/fairseq-dialog-dataset/task6
@@ -61,5 +61,5 @@ rm -r checkpoints
 ```
 python3 dialog_generate.py --task dialog_task data-bin/dialog/task6 --path checkpoints/dialog/task6/checkpoint_best.pt --batch-size 128 --beam 3
 ```
-Increasing beam-width to 10 is preferable for better performance.
-The above command makes two files, namely, failed_dialogs_stat.txt and passed_dialogs_stat.txt. The failed_dialogs_stat.txt file has information about all the dialogs that failed, and passed_dialogs_stat.txt has information about all the dialogs that passed.
+Increasing beam-width to 10 is preferable for better performance.  
+The above command makes two files, namely, failed_dialogs_stat.txt and passed_dialogs_stat.txt. The failed_dialogs_stat.txt file has information about all the dialogs that failed, and passed_dialogs_stat.txt has information about all the dialogs that passed.  
