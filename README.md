@@ -13,24 +13,24 @@ pip install --editable .
 ```
 # Training a new model
 ### Download dataset
-Check that the current working directory is ''fairseq''.
+Verify that the current working directory is **fairseq**.
 ```
 cd examples/dialog
 ```
 1. Go to https://fb-public.app.box.com/s/chnq60iivzv5uckpvj2n2vijlyepze6w 
-1. Download dialog-bAbI-tasks_1_.tgz in directory fairseq/examples/dialog
+1. Download dialog-bAbI-tasks_1_.tgz in directory **fairseq/examples/dialog**  
 ```
 tar zxvf dialog-bAbI-tasks_1_.tgz
 ```
-Check that the dataset is in directory fairseq/examples/dialog/dialog-bAbI-tasks.
+Verify that the dataset is in directory **fairseq/examples/dialog/dialog-bAbI-tasks**.   
 ### Convert dataset to fairseq dataset format
-Check that the current working directory is fairseq/examples/dialog.
+Verify that the current working directory is **fairseq/examples/dialog**.  
 ```
 python3 create-fairseq-dialog-dataset.py data-bin/dialog
 ```
-Check that the converted dataset is in directory fairseq/examples/dialog/fairseq-dialog-dataset/task6.
+Verify that the converted dataset is in directory **fairseq/examples/dialog/fairseq-dialog-dataset/task6**.  
 ### Download pretrained word vectors
-Check that the current working directory is fairseq/examples/dialog.
+Verify that the current working directory is **fairseq/examples/dialog**.
 ```
 mkdir pretrained-word-vectors
 cd pretrained-word-vectors
@@ -41,8 +41,8 @@ cd pretrained-word-vectors
 unzip glove.6B.zip
 cd ../../..
 ```
-Check that the pretrained vectors are in directory fairseq/examples/dialog/pretrained-word-vectors.    
-Check that the current working directory is fairseq.
+Verify that the pretrained vectors are in directory **fairseq/examples/dialog/pretrained-word-vectors**.    
+Verify that the current working directory is **fairseq**.
 ### Preprocess/binarize the data
 ```
 TEXT=examples/dialog/fairseq-dialog-dataset/task6
@@ -52,8 +52,8 @@ python3 preprocess.py --task dialog_task --source-lang hmn --target-lang bot --j
 ```
 CUDA_VISIBLE_DEVICES=0 python3 train.py --task dialog_task data-bin/dialog/task6 --arch dialog_lstm_model --save-dir checkpoints/dialog/task6 --max-tokens 8192 --required-batch-size-multiple 1 --criterion label_smoothed_cross_entropy --label-smoothing 0.1 --optimizer nag --lr-scheduler fixed --force-anneal 100 --lr 0.1 --clip-norm 0.1 --min-lr 2.47033e-200
 ```
-NOTE: If a model has previously been trained then it is in the directory checkpoints/dialog/task6/checkpoint_best.pt
-If training again to generate a new model then the previous obsolete model must be removed, otherwise training will resume from the last best checkpoint model. A brute-force method to remove the obsolete model is to remove the directory fairseq/checkpoints as follows:
+**NOTE:** If a model has previously been trained then it is in the directory **checkpoints/dialog/task6/checkpoint_best.pt**
+If training again to generate a new model then the previous obsolete model must be removed, otherwise training will resume from the last best checkpoint model. A brute-force method to remove the obsolete model is to remove the directory **fairseq/checkpoints** as follows:
 ```
 rm -r checkpoints
 ```
@@ -62,4 +62,4 @@ rm -r checkpoints
 python3 dialog_generate.py --task dialog_task data-bin/dialog/task6 --path checkpoints/dialog/task6/checkpoint_best.pt --batch-size 128 --beam 3
 ```
 Increasing beam-width to a number higher than 3 is preferable for better performance.  
-The above command generates two files, namely, failed_dialogs_stat.txt and passed_dialogs_stat.txt. The failed_dialogs_stat.txt file has information about all the dialogs that failed, and passed_dialogs_stat.txt has information about all the dialogs that passed.  
+The above command generates two files, namely, **failed_dialogs_stat.txt** and **passed_dialogs_stat.txt**. The **failed_dialogs_stat.txt** file has information about all the dialogs that failed, and **passed_dialogs_stat.txt** has information about all the dialogs that passed.  
