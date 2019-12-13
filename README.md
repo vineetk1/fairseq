@@ -52,7 +52,7 @@ python3 preprocess.py --task dialog_task --source-lang hmn --target-lang bot --j
 ```
 CUDA_VISIBLE_DEVICES=0 python3 train.py --task dialog_task data-bin/dialog/task6 --arch dialog_lstm_model --save-dir checkpoints/dialog/task6 --max-tokens 8192 --required-batch-size-multiple 1 --criterion label_smoothed_cross_entropy --label-smoothing 0.1 --optimizer nag --lr-scheduler fixed --force-anneal 100 --lr 0.1 --clip-norm 0.1 --min-lr 2.47033e-200
 ```
-***NOTE*** If a model has previously been trained then it is in directory checkpoints/dialog/task6/checkpoint_best.pt
+NOTE: If a model has previously been trained then it is in the directory checkpoints/dialog/task6/checkpoint_best.pt
 If training again to generate a new model then the previous obsolete model must be removed, otherwise training will resume from the last best checkpoint model. A brute-force method to remove the obsolete model is to remove the directory fairseq/checkpoints as follows:
 '''
 rm -r checkpoints
