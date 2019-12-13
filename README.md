@@ -13,7 +13,7 @@ pip install --editable .
 ```
 # Training a new model
 ### Download dataset
-Verify that the current working directory is **fairseq**.
+Verify that the current working directory is *fairseq*.
 ```
 cd examples/dialog
 ```
