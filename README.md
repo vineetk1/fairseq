@@ -7,7 +7,7 @@ The implementation is based on the paper: <a href="https://arxiv.org/pdf/1701.04
 * Python version >= 3.6
 # Installation
 ```
-git clone https://github.com/vineetk1/fairseq.git
+git clone --branch dialog https://github.com/vineetk1/fairseq.git
 cd fairseq
 pip3 install --editable .
 ```
@@ -15,9 +15,7 @@ pip3 install --editable .
 ### Download dataset
 Verify that the current working directory is *fairseq*.
 ```
-cd examples
-mkdir dialog
-cd dialog
+cd examples/dialog
 ```
 1. Go to https://fb-public.app.box.com/s/chnq60iivzv5uckpvj2n2vijlyepze6w 
 1. Download *dialog-bAbI-tasks_1_.tgz* in directory *fairseq/examples/dialog*  
