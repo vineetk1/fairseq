@@ -18,3 +18,7 @@ pip install --editable .
 ```
 tar zxvf dialog-bAbI-tasks_1_.tgz
 ```
+### Convert dataset to fairseq format
+```
+python3 create-fairseq-dialog-dataset.py data-bin/dialog
+```
