@@ -23,6 +23,7 @@ cd dialog
 1. Download *dialog-bAbI-tasks_1_.tgz* in directory *fairseq/examples/dialog*  
 ```
 tar zxvf dialog-bAbI-tasks_1_.tgz
+rm dialog-bAbI-tasks_1_.tgz
 ```
 Verify that the dataset is in directory *fairseq/examples/dialog/dialog-bAbI-tasks*.   
 ### Convert dataset to fairseq dataset format
