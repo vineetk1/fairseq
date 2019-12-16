@@ -11,7 +11,7 @@ git clone --branch dialog https://github.com/vineetk1/fairseq.git
 cd fairseq
 pip3 install --editable .
 ```
-# Training a new model
+# Train a new model
 ### Download dataset
 Verify that the current working directory is *fairseq*.
 ```
@@ -59,7 +59,7 @@ If training again to generate a new model then the previous obsolete model must 
 ```
 rm -r checkpoints
 ```
-### Evaluate the trained model
+# Evaluate the trained model
 ```
 python3 dialog_generate.py --task dialog_task data-bin/dialog/task6 --path checkpoints/dialog/task6/checkpoint_best.pt --batch-size 128 --beam 3
 ```
