@@ -51,6 +51,7 @@ TEXT=examples/dialog/fairseq-dialog-dataset/task6
 python3 preprocess.py --task dialog_task --source-lang hmn --target-lang bot --joined-dictionary --trainpref $TEXT/task6-trn --validpref $TEXT/task6-dev --testpref $TEXT/task6-tst --destdir data-bin/dialog/task6
 ```
 ### Train a model
+Verify that the current working directory is *fairseq*.
 ```
 CUDA_VISIBLE_DEVICES=0 python3 train.py --task dialog_task data-bin/dialog/task6 --arch dialog_lstm_model --save-dir checkpoints/dialog/task6 --max-tokens 8192 --required-batch-size-multiple 1 --criterion label_smoothed_cross_entropy --label-smoothing 0.1 --optimizer nag --lr-scheduler fixed --force-anneal 100 --lr 0.1 --clip-norm 0.1 --min-lr 2.47033e-200
 ```
@@ -60,6 +61,7 @@ If training again to generate a new model then the previous obsolete model must 
 rm -r checkpoints
 ```
 # Evaluate the trained model
+Verify that the current working directory is *fairseq*.
 ```
 python3 dialog_generate.py --task dialog_task data-bin/dialog/task6 --path checkpoints/dialog/task6/checkpoint_best.pt --batch-size 32 --beam 5
 ```
