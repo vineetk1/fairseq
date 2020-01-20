@@ -44,8 +44,8 @@ rm glove.6B.zip
 cd ../../..
 ```
 Verify that the pretrained vectors are in directory *fairseq/examples/dialog/pretrained-word-vectors*.    
-Verify that the current working directory is *fairseq*.
 ### Preprocess/binarize the data
+Verify that the current working directory is *fairseq*.
 ```
 TEXT=examples/dialog/fairseq-dialog-dataset/task6
 python3 preprocess.py --task dialog_task --source-lang hmn --target-lang bot --joined-dictionary --trainpref $TEXT/task6-trn --validpref $TEXT/task6-dev --testpref $TEXT/task6-tst --destdir data-bin/dialog/task6
