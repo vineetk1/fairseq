@@ -8,6 +8,9 @@ RoBERTa iterates on BERT's pretraining procedure, including training the model l
 
 ### What's New:
 
+- November 2019: French model (CamemBERT) is available [CamemBERT](https://github.com/pytorch/fairseq/tree/master/examples/camembert).
+- November 2019: Multilingual encoder (XLM-RoBERTa) is available [XLM-R](https://github.com/pytorch/fairseq/tree/master/examples/xlmr).
+- September 2019: TensorFlow and TPU support via the [transformers library](https://github.com/huggingface/transformers).
 - August 2019: RoBERTa is now supported in the [pytorch-transformers library](https://github.com/huggingface/pytorch-transformers).
 - August 2019: Added [tutorial for finetuning on WinoGrande](https://github.com/pytorch/fairseq/tree/master/examples/roberta/wsc#roberta-training-on-winogrande-dataset).
 - August 2019: Added [tutorial for pretraining RoBERTa using your own data](README.pretraining.md).
@@ -146,11 +149,26 @@ logprobs = roberta.predict('new_task', tokens)  # tensor([[-1.1050, -1.0672, -1.
 
 ##### Batched prediction:
 ```python
+import torch
 from fairseq.data.data_utils import collate_tokens
-sentences = ['Hello world.', 'Another unrelated sentence.']
-batch = collate_tokens([roberta.encode(sent) for sent in sentences], pad_idx=1)
-logprobs = roberta.predict('new_task', batch)
-assert logprobs.size() == torch.Size([2, 3])
+
+roberta = torch.hub.load('pytorch/fairseq', 'roberta.large.mnli')
+roberta.eval()
+
+batch_of_pairs = [
+    ['Roberta is a heavily optimized version of BERT.', 'Roberta is not very optimized.'],
+    ['Roberta is a heavily optimized version of BERT.', 'Roberta is based on BERT.'],
+    ['potatoes are awesome.', 'I like to run.'],
+    ['Mars is very far from earth.', 'Mars is very close.'],
+]
+
+batch = collate_tokens(
+    [roberta.encode(pair[0], pair[1]) for pair in batch_of_pairs], pad_idx=1
+)
+
+logprobs = roberta.predict('mnli', batch)
+print(logprobs.argmax(dim=1))
+# tensor([0, 2, 1, 0])
 ```
 
 ##### Using the GPU:

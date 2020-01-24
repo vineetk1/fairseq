@@ -57,6 +57,13 @@ class LightconvLayer(nn.Module):
             self.bias = None
         self.reset_parameters()
 
+    def upgrade_state_dict_named(self, state_dict, name):
+        prefix = name + '.' if name != '' else ''
+        for k, v in state_dict.items():
+            if k.endswith(prefix + 'weight'):
+                if v.dim() == 3 and v.size(1) == 1:
+                    state_dict[k] = v.squeeze(1)
+
     def reset_parameters(self):
         nn.init.xavier_uniform_(self.weight)
         if self.bias is not None:
@@ -115,5 +122,4 @@ class LightconvLayer(nn.Module):
         return utils.set_incremental_state(self, incremental_state, 'input_buffer', new_buffer)
 
     def half(self):
-        print("HALF")
         return self._apply(lambda t: t.half() if t.is_floating_point() else t)

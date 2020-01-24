@@ -20,6 +20,11 @@ Model | Description | Dataset | Download
 
 ## Example usage (torch.hub)
 
+We require a few additional Python dependencies for preprocessing:
+```bash
+pip install sacremoses subword_nmt
+```
+
 Interactive translation via PyTorch Hub:
 ```python
 import torch
@@ -29,13 +34,35 @@ torch.hub.list('pytorch/fairseq')  # [..., 'transformer.wmt16.en-de', ... ]
 
 # Load a transformer trained on WMT'16 En-De
 en2de = torch.hub.load('pytorch/fairseq', 'transformer.wmt16.en-de', tokenizer='moses', bpe='subword_nmt')
+en2de.eval()  # disable dropout
 
 # The underlying model is available under the *models* attribute
 assert isinstance(en2de.models[0], fairseq.models.transformer.TransformerModel)
 
+# Move model to GPU for faster translation
+en2de.cuda()
+
 # Translate a sentence
 en2de.translate('Hello world!')
 # 'Hallo Welt!'
+
+# Batched translation
+en2de.translate(['Hello world!', 'The cat sat on the mat.'])
+# ['Hallo Welt!', 'Die Katze saß auf der Matte.']
+```
+
+Loading custom models:
+```python
+from fairseq.models.transformer import TransformerModel
+zh2en = TransformerModel.from_pretrained(
+  '/path/to/checkpoints',
+  checkpoint_file='checkpoint_best.pt',
+  data_name_or_path='data-bin/wmt17_zh_en_full',
+  bpe='subword_nmt',
+  bpe_codes='data-bin/wmt17_zh_en_full/zh.code'
+)
+zh2en.translate('你好 世界')
+# 'Hello World'
 ```
 
 ## Example usage (CLI tools)
@@ -89,7 +116,13 @@ CUDA_VISIBLE_DEVICES=0 fairseq-train \
     --lr 5e-4 --lr-scheduler inverse_sqrt --warmup-updates 4000 \
     --dropout 0.3 --weight-decay 0.0001 \
     --criterion label_smoothed_cross_entropy --label-smoothing 0.1 \
-    --max-tokens 4096
+    --max-tokens 4096 \
+    --eval-bleu \
+    --eval-bleu-args '{"beam": 5, "max_len_a": 1.2, "max_len_b": 10}' \
+    --eval-bleu-detok moses \
+    --eval-bleu-remove-bpe \
+    --eval-bleu-print-samples \
+    --best-checkpoint-metric bleu --maximize-best-checkpoint-metric
 ```
 
 Finally we can evaluate our trained model:
@@ -236,7 +269,7 @@ cat iwslt17.test.${SRC}-en.${SRC}.bpe \
     | fairseq-interactive data-bin/iwslt17.de_fr.en.bpe16k/ \
       --task multilingual_translation --source-lang ${SRC} --target-lang en \
       --path checkpoints/multilingual_transformer/checkpoint_best.pt \
-      --buffer 2000 --batch-size 128 \
+      --buffer-size 2000 --batch-size 128 \
       --beam 5 --remove-bpe=sentencepiece \
     > iwslt17.test.${SRC}-en.en.sys
 grep ^H iwslt17.test.${SRC}-en.en.sys | cut -f3 \

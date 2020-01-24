@@ -54,68 +54,37 @@ class DynamicLossScaler(object):
         return False
 
 
-class FP16Optimizer(optim.FairseqOptimizer):
-    """
-    Wrap an *optimizer* to support FP16 (mixed precision) training.
-    """
+class _FP16OptimizerMixin(object):
 
-    def __init__(self, args, params, fp32_optimizer, fp32_params):
-        super().__init__(args)
-        self.fp16_params = params
-        self.fp32_optimizer = fp32_optimizer
-        self.fp32_params = fp32_params
+    def __init__(self, *args, **kwargs):
+        # forward __init__ call to the next class in mro(method resolution order)
+        super().__init__(*args, **kwargs)
 
-        if getattr(args, 'fp16_scale_window', None) is None:
-            if len(args.update_freq) > 1:
-                raise ValueError(
-                    '--fp16-scale-window must be given explicitly when using a '
-                    'custom --update-freq schedule'
-                )
-            scale_window = 2**14 / args.distributed_world_size / args.update_freq[0]
-        else:
-            scale_window = args.fp16_scale_window
-
-        self.scaler = DynamicLossScaler(
-            init_scale=args.fp16_init_scale,
-            scale_window=scale_window,
-            tolerance=args.fp16_scale_tolerance,
-            threshold=args.threshold_loss_scale,
-        )
+    @property
+    def has_flat_params(self):
+        return torch.is_tensor(self.fp32_params)
 
     @classmethod
-    def build_optimizer(cls, args, params):
-        """
-        Args:
-            args (argparse.Namespace): fairseq args
-            params (iterable): iterable of parameters to optimize
-        """
+    def build_fp32_params(cls, params, flatten=True):
         # create FP32 copy of parameters and grads
-        total_param_size = sum(p.data.numel() for p in params)
-        fp32_params = params[0].new(0).float().new(total_param_size)
-        offset = 0
-        for p in params:
-            numel = p.data.numel()
-            fp32_params[offset:offset+numel].copy_(p.data.view(-1))
-            offset += numel
-        fp32_params = torch.nn.Parameter(fp32_params)
-        fp32_params.grad = fp32_params.data.new(total_param_size)
-
-        fp32_optimizer = optim.build_optimizer(args, [fp32_params])
-        return cls(args, params, fp32_optimizer, fp32_params)
-
-    @property
-    def optimizer(self):
-        return self.fp32_optimizer.optimizer
-
-    @property
-    def optimizer_config(self):
-        return self.fp32_optimizer.optimizer_config
-
-    def get_lr(self):
-        return self.fp32_optimizer.get_lr()
-
-    def set_lr(self, lr):
-        self.fp32_optimizer.set_lr(lr)
+        if flatten:
+            total_param_size = sum(p.data.numel() for p in params)
+            fp32_params = torch.zeros(total_param_size, dtype=torch.float, device=params[0].device)
+            offset = 0
+            for p in params:
+                numel = p.data.numel()
+                fp32_params[offset:offset+numel].copy_(p.data.view(-1))
+                offset += numel
+            fp32_params = torch.nn.Parameter(fp32_params)
+            fp32_params.grad = fp32_params.data.new(total_param_size)
+            return fp32_params
+        else:
+            fp32_params = []
+            for p in params:
+                p32 = torch.nn.Parameter(p.data.float())
+                p32.grad = torch.zeros_like(p32.data)
+                fp32_params.append(p32)
+            return fp32_params
 
     def state_dict(self):
         """Return the optimizer's state dict."""
@@ -148,18 +117,29 @@ class FP16Optimizer(optim.FairseqOptimizer):
 
     def _sync_fp16_grads_to_fp32(self, multiply_grads=1.):
         if self._needs_sync:
-            # copy FP16 grads to FP32
-            offset = 0
-            for p in self.fp16_params:
-                if not p.requires_grad:
-                    continue
-                grad_data = p.grad.data if p.grad is not None else p.data.new_zeros(p.data.shape)
-                numel = grad_data.numel()
-                self.fp32_params.grad.data[offset:offset+numel].copy_(grad_data.view(-1))
-                offset += numel
-
             # correct for dynamic loss scaler
-            self.fp32_params.grad.data.mul_(multiply_grads / self.scaler.loss_scale)
+            multiply_grads /= self.scaler.loss_scale
+
+            # copy FP16 grads to FP32
+            if self.has_flat_params:
+                offset = 0
+                for p in self.fp16_params:
+                    if not p.requires_grad:
+                        continue
+                    grad_data = p.grad.data if p.grad is not None else p.data.new_zeros(p.data.shape)
+                    numel = grad_data.numel()
+                    self.fp32_params.grad.data[offset:offset+numel].copy_(grad_data.view(-1))
+                    offset += numel
+                self.fp32_params.grad.data.mul_(multiply_grads)
+            else:
+                for p, p32 in zip(self.fp16_params, self.fp32_params):
+                    if not p.requires_grad:
+                        continue
+                    if p.grad is not None:
+                        p32.grad.data.copy_(p.grad.data)
+                        p32.grad.data.mul_(multiply_grads)
+                    else:
+                        p32.grad = torch.zeros_like(p.data, dtype=torch.float)
 
             self._needs_sync = False
 
@@ -167,26 +147,32 @@ class FP16Optimizer(optim.FairseqOptimizer):
         """Multiplies grads by a constant ``c``."""
         if self._needs_sync:
             self._sync_fp16_grads_to_fp32(c)
-        else:
+        elif self.has_flat_params:
             self.fp32_params.grad.data.mul_(c)
+        else:
+            for p32 in self.fp32_params:
+                p32.grad.data.mul_(c)
 
     def clip_grad_norm(self, max_norm):
         """Clips gradient norm and updates dynamic loss scaler."""
         self._sync_fp16_grads_to_fp32()
-        grad_norm = utils.clip_grad_norm_(self.fp32_params.grad.data, max_norm)
+        if self.has_flat_params:
+            grad_norm = utils.clip_grad_norm_(self.fp32_params.grad.data, max_norm)
+        else:
+            grad_norm = torch.nn.utils.clip_grad_norm_(self.fp32_params, max_norm)
 
         # detect overflow and adjust loss scale
         overflow = DynamicLossScaler.has_overflow(grad_norm)
         self.scaler.update_scale(overflow)
         if overflow:
-            if self.scaler.loss_scale <= self.args.min_loss_scale:
+            if self.scaler.loss_scale <= self.min_loss_scale:
                 # Use FloatingPointError as an uncommon error that parent
                 # functions can safely catch to stop training.
                 raise FloatingPointError((
                     'Minimum loss scale reached ({}). Your loss is probably exploding. '
                     'Try lowering the learning rate, using gradient clipping or '
                     'increasing the batch size.'
-                ).format(self.args.min_loss_scale))
+                ).format(self.min_loss_scale))
             raise OverflowError('setting loss scale to: ' + str(self.scaler.loss_scale))
         return grad_norm
 
@@ -196,45 +182,42 @@ class FP16Optimizer(optim.FairseqOptimizer):
         self.fp32_optimizer.step(closure)
 
         # copy FP32 params back into FP16 model
-        offset = 0
-        for p in self.fp16_params:
-            if not p.requires_grad:
-                continue
-            numel = p.data.numel()
-            p.data.copy_(self.fp32_params.data[offset:offset+numel].view_as(p.data))
-            offset += numel
+        if self.has_flat_params:
+            offset = 0
+            for p in self.fp16_params:
+                if not p.requires_grad:
+                    continue
+                numel = p.data.numel()
+                p.data.copy_(self.fp32_params.data[offset:offset+numel].view_as(p.data))
+                offset += numel
+        else:
+            for p, p32 in zip(self.fp16_params, self.fp32_params):
+                if not p.requires_grad:
+                    continue
+                p.data.copy_(p32.data)
 
     def zero_grad(self):
         """Clears the gradients of all optimized parameters."""
         for p in self.fp16_params:
             p.grad = None
+        if self.has_flat_params:
+            self.fp32_params.grad.zero_()
+        else:
+            for p32 in self.fp32_params:
+                p32.grad.zero_()
         self._needs_sync = False
 
 
-class MemoryEfficientFP16Optimizer(optim.FairseqOptimizer):
+class FP16Optimizer(_FP16OptimizerMixin, optim.FairseqOptimizer):
     """
     Wrap an *optimizer* to support FP16 (mixed precision) training.
-
-    Compared to :class:`fairseq.optim.FP16Optimizer`, this version does not
-    maintain an FP32 copy of the model. We instead expect the optimizer to
-    convert the gradients to FP32 internally and sync the results back to the
-    FP16 model params. This significantly reduces memory usage but slightly
-    increases the time spent in the optimizer.
-
-    Since this wrapper depends on specific functionality in the wrapped
-    optimizer (i.e., on-the-fly conversion of grads to FP32), only certain
-    optimizers can be wrapped. This is determined by the
-    *supports_memory_efficient_fp16* property.
     """
 
-    def __init__(self, args, params, optimizer):
-        if not optimizer.supports_memory_efficient_fp16:
-            raise ValueError(
-                'Unsupported optimizer: {}'.format(optimizer.__class__.__name__)
-            )
-
+    def __init__(self, args, params, fp32_optimizer, fp32_params):
         super().__init__(args)
-        self.wrapped_optimizer = optimizer
+        self.fp16_params = params
+        self.fp32_optimizer = fp32_optimizer
+        self.fp32_params = fp32_params
 
         if getattr(args, 'fp16_scale_window', None) is None:
             if len(args.update_freq) > 1:
@@ -242,7 +225,7 @@ class MemoryEfficientFP16Optimizer(optim.FairseqOptimizer):
                     '--fp16-scale-window must be given explicitly when using a '
                     'custom --update-freq schedule'
                 )
-            scale_window = 2**14 / args.distributed_world_size / args.update_freq[0]
+            scale_window = int(2**14 / args.distributed_world_size / args.update_freq[0])
         else:
             scale_window = args.fp16_scale_window
 
@@ -252,6 +235,7 @@ class MemoryEfficientFP16Optimizer(optim.FairseqOptimizer):
             tolerance=args.fp16_scale_tolerance,
             threshold=args.threshold_loss_scale,
         )
+        self.min_loss_scale = self.args.min_loss_scale
 
     @classmethod
     def build_optimizer(cls, args, params):
@@ -260,22 +244,34 @@ class MemoryEfficientFP16Optimizer(optim.FairseqOptimizer):
             args (argparse.Namespace): fairseq args
             params (iterable): iterable of parameters to optimize
         """
-        fp16_optimizer = optim.build_optimizer(args, params)
-        return cls(args, params, fp16_optimizer)
+        flatten = not getattr(args, 'fp16_no_flatten_grads', False)
+        fp32_params = cls.build_fp32_params(params, flatten=flatten)
+        if flatten:
+            fp32_optimizer = optim.build_optimizer(args, [fp32_params])
+        else:
+            fp32_optimizer = optim.build_optimizer(args, fp32_params)
+        return cls(args, params, fp32_optimizer, fp32_params)
 
     @property
     def optimizer(self):
-        return self.wrapped_optimizer.optimizer
+        return self.fp32_optimizer.optimizer
 
     @property
     def optimizer_config(self):
-        return self.wrapped_optimizer.optimizer_config
+        return self.fp32_optimizer.optimizer_config
 
     def get_lr(self):
-        return self.wrapped_optimizer.get_lr()
+        return self.fp32_optimizer.get_lr()
 
     def set_lr(self, lr):
-        self.wrapped_optimizer.set_lr(lr)
+        self.fp32_optimizer.set_lr(lr)
+
+
+class _MemoryEfficientFP16OptimizerMixin(object):
+
+    def __init__(self, *args, **kwargs):
+        # forward __init__ call to the next class in mro(method resolution order)
+        super().__init__(*args, **kwargs)
 
     def state_dict(self):
         """Return the optimizer's state dict."""
@@ -351,14 +347,14 @@ class MemoryEfficientFP16Optimizer(optim.FairseqOptimizer):
         overflow = DynamicLossScaler.has_overflow(grad_norm)
         self.scaler.update_scale(overflow)
         if overflow:
-            if self.scaler.loss_scale <= self.args.min_loss_scale:
+            if self.scaler.loss_scale <= self.min_loss_scale:
                 # Use FloatingPointError as an uncommon error that parent
                 # functions can safely catch to stop training.
                 raise FloatingPointError((
                     'Minimum loss scale reached ({}). Your loss is probably exploding. '
                     'Try lowering the learning rate, using gradient clipping or '
                     'increasing the batch size.'
-                ).format(self.args.min_loss_scale))
+                ).format(self.min_loss_scale))
             raise OverflowError('setting loss scale to: ' + str(self.scaler.loss_scale))
 
         return grad_norm
@@ -372,3 +368,71 @@ class MemoryEfficientFP16Optimizer(optim.FairseqOptimizer):
         """Clears the gradients of all optimized parameters."""
         self.wrapped_optimizer.zero_grad()
         self._grads_are_scaled = False
+
+
+class MemoryEfficientFP16Optimizer(_MemoryEfficientFP16OptimizerMixin, optim.FairseqOptimizer):
+    """
+    Wrap an *optimizer* to support FP16 (mixed precision) training.
+
+    Compared to :class:`fairseq.optim.FP16Optimizer`, this version does not
+    maintain an FP32 copy of the model. We instead expect the optimizer to
+    convert the gradients to FP32 internally and sync the results back to the
+    FP16 model params. This significantly reduces memory usage but slightly
+    increases the time spent in the optimizer.
+
+    Since this wrapper depends on specific functionality in the wrapped
+    optimizer (i.e., on-the-fly conversion of grads to FP32), only certain
+    optimizers can be wrapped. This is determined by the
+    *supports_memory_efficient_fp16* property.
+    """
+
+    def __init__(self, args, params, optimizer):
+        if not optimizer.supports_memory_efficient_fp16:
+            raise ValueError(
+                'Unsupported optimizer: {}'.format(optimizer.__class__.__name__)
+            )
+
+        super().__init__(args)
+        self.wrapped_optimizer = optimizer
+
+        if getattr(args, 'fp16_scale_window', None) is None:
+            if len(args.update_freq) > 1:
+                raise ValueError(
+                    '--fp16-scale-window must be given explicitly when using a '
+                    'custom --update-freq schedule'
+                )
+            scale_window = 2**14 / args.distributed_world_size / args.update_freq[0]
+        else:
+            scale_window = args.fp16_scale_window
+
+        self.scaler = DynamicLossScaler(
+            init_scale=args.fp16_init_scale,
+            scale_window=scale_window,
+            tolerance=args.fp16_scale_tolerance,
+            threshold=args.threshold_loss_scale,
+        )
+        self.min_loss_scale = self.args.min_loss_scale
+
+    @classmethod
+    def build_optimizer(cls, args, params):
+        """
+        Args:
+            args (argparse.Namespace): fairseq args
+            params (iterable): iterable of parameters to optimize
+        """
+        fp16_optimizer = optim.build_optimizer(args, params)
+        return cls(args, params, fp16_optimizer)
+
+    @property
+    def optimizer(self):
+        return self.wrapped_optimizer.optimizer
+
+    @property
+    def optimizer_config(self):
+        return self.wrapped_optimizer.optimizer_config
+
+    def get_lr(self):
+        return self.wrapped_optimizer.get_lr()
+
+    def set_lr(self, lr):
+        self.wrapped_optimizer.set_lr(lr)
