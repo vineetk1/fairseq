@@ -503,6 +503,21 @@ class TestLanguageModeling(unittest.TestCase):
                     '--tokens-per-sample', '500',
                 ])
 
+    def test_lstm_lm(self):
+        with contextlib.redirect_stdout(StringIO()):
+            with tempfile.TemporaryDirectory('test_lstm_lm') as data_dir:
+                create_dummy_data(data_dir)
+                preprocess_lm_data(data_dir)
+                train_language_model(
+                    data_dir, 'lstm_lm', ['--add-bos-token'], run_validation=True,
+                )
+                eval_lm_main(data_dir)
+                generate_main(data_dir, [
+                    '--task', 'language_modeling',
+                    '--sample-break-mode', 'eos',
+                    '--tokens-per-sample', '500',
+                ])
+
 
 class TestMaskedLanguageModel(unittest.TestCase):
 
@@ -645,7 +660,7 @@ def train_legacy_masked_language_model(data_dir, arch, extra_args=()):
     train.main(train_args)
 
 
-class TestCommonOptions(unittest.TestCase):
+class TestOptimizers(unittest.TestCase):
 
     def setUp(self):
         logging.disable(logging.CRITICAL)
@@ -672,6 +687,35 @@ class TestCommonOptions(unittest.TestCase):
                         '--optimizer', optimizer,
                     ])
                     generate_main(data_dir)
+
+    @unittest.skipIf(not torch.cuda.is_available(), 'test requires a GPU')
+    def test_flat_grads(self):
+        with contextlib.redirect_stdout(StringIO()):
+            with tempfile.TemporaryDirectory('test_flat_grads') as data_dir:
+                # Use just a bit of data and tiny model to keep this test runtime reasonable
+                create_dummy_data(data_dir, num_examples=10, maxlen=5)
+                preprocess_translation_data(data_dir)
+                with self.assertRaises(RuntimeError):
+                    # adafactor isn't compatible with flat grads, which
+                    # are used by default with --fp16
+                    train_translation_model(data_dir, 'lstm', [
+                        '--required-batch-size-multiple', '1',
+                        '--encoder-layers', '1',
+                        '--encoder-hidden-size', '32',
+                        '--decoder-layers', '1',
+                        '--optimizer', 'adafactor',
+                        '--fp16',
+                    ])
+                # but it should pass once we set --fp16-no-flatten-grads
+                train_translation_model(data_dir, 'lstm', [
+                    '--required-batch-size-multiple', '1',
+                    '--encoder-layers', '1',
+                    '--encoder-hidden-size', '32',
+                    '--decoder-layers', '1',
+                    '--optimizer', 'adafactor',
+                    '--fp16',
+                    '--fp16-no-flatten-grads',
+                ])
 
 
 def create_dummy_data(data_dir, num_examples=100, maxlen=20, alignment=False):
