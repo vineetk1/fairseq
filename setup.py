@@ -4,12 +4,13 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+import os
 from setuptools import setup, find_packages, Extension
 import sys
 
 
-if sys.version_info < (3,):
-    sys.exit('Sorry, Python3 is required for fairseq.')
+if sys.version_info < (3, 6):
+    sys.exit('Sorry, Python >= 3.6 is required for fairseq.')
 
 
 with open('README.md') as f:
@@ -63,15 +64,65 @@ extensions = [
 ]
 
 
+cmdclass = {}
+
+
+try:
+    # torch is not available when generating docs
+    from torch.utils import cpp_extension
+    extensions.extend([
+        cpp_extension.CppExtension(
+            'fairseq.libnat',
+            sources=[
+                'fairseq/clib/libnat/edit_dist.cpp',
+            ],
+        )
+    ])
+
+    if 'CUDA_HOME' in os.environ:
+        extensions.extend([
+            cpp_extension.CppExtension(
+                'fairseq.libnat_cuda',
+                sources=[
+                    'fairseq/clib/libnat_cuda/edit_dist.cu',
+                    'fairseq/clib/libnat_cuda/binding.cpp'
+                ],
+            )])
+    cmdclass['build_ext'] = cpp_extension.BuildExtension
+
+except ImportError:
+    pass
+
+
+if 'READTHEDOCS' in os.environ:
+    # don't build extensions when generating docs
+    extensions = []
+    if 'build_ext' in cmdclass:
+        del cmdclass['build_ext']
+
+    # use CPU build of PyTorch
+    dependency_links = [
+        'https://download.pytorch.org/whl/cpu/torch-1.3.0%2Bcpu-cp36-cp36m-linux_x86_64.whl'
+    ]
+else:
+    dependency_links = []
+
+
+if 'clean' in sys.argv[1:]:
+    # Source: https://bit.ly/2NLVsgE
+    print("deleting Cython files...")
+    import subprocess
+    subprocess.run(['rm -f fairseq/*.so fairseq/**/*.so fairseq/*.pyd fairseq/**/*.pyd'], shell=True)
+
+
 setup(
     name='fairseq',
-    version='0.8.0',
+    version='0.9.0',
     description='Facebook AI Research Sequence-to-Sequence Toolkit',
     url='https://github.com/pytorch/fairseq',
     classifiers=[
         'Intended Audience :: Science/Research',
         'License :: OSI Approved :: MIT License',
-        'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
         'Topic :: Scientific/Engineering :: Artificial Intelligence',
     ],
@@ -85,13 +136,13 @@ setup(
     install_requires=[
         'cffi',
         'cython',
-        'fastBPE',
         'numpy',
         'regex',
         'sacrebleu',
         'torch',
         'tqdm',
     ],
+    dependency_links=dependency_links,
     packages=find_packages(exclude=['scripts', 'tests']),
     ext_modules=extensions,
     test_suite='tests',
@@ -101,10 +152,11 @@ setup(
             'fairseq-generate = fairseq_cli.generate:cli_main',
             'fairseq-interactive = fairseq_cli.interactive:cli_main',
             'fairseq-preprocess = fairseq_cli.preprocess:cli_main',
-            'fairseq-score = fairseq_cli.score:main',
+            'fairseq-score = fairseq_cli.score:cli_main',
             'fairseq-train = fairseq_cli.train:cli_main',
             'fairseq-validate = fairseq_cli.validate:cli_main',
         ],
     },
+    cmdclass=cmdclass,
     zip_safe=False,
 )

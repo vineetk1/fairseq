@@ -47,7 +47,7 @@ class FairseqBMUF(FairseqOptimizer):
         )
         parser.add_argument(
             "--global-sync-iter",
-            default=10,
+            default=50,
             type=int,
             help="Iteration for syncing global model",
         )
@@ -59,13 +59,13 @@ class FairseqBMUF(FairseqOptimizer):
         )
         parser.add_argument(
             "--use-nbm",
-            default=True,
+            default=False,
             action="store_true",
             help="Specify whether you want to use classical BM / Nesterov BM",
         )
         parser.add_argument(
             "--average-sync",
-            default=True,
+            default=False,
             action="store_true",
             help="Specify whether you want to average the local momentum after each sync",
         )
@@ -89,6 +89,7 @@ class FairseqBMUF(FairseqOptimizer):
 
     def load_state_dict(self, state_dict, optimizer_overrides=None):
         self._optimizer.load_state_dict(state_dict, optimizer_overrides)
+        self.initial_state = self._optimizer.state_dict()
 
     def multiply_grads(self, c):
         """Multiplies grads by a constant *c*."""
@@ -127,7 +128,9 @@ class FairseqBMUF(FairseqOptimizer):
 
     def _is_bmuf_iter(self):
         # Check whether train iterations is equal to bmuf sync iter
-        if self.get_num_updates() % self.sync_iter == 0:
+        if (self.get_num_updates() > self.warmup_iteration) and (
+            self.get_num_updates() % self.sync_iter == 0
+        ):
             return True
         return False
 

@@ -9,11 +9,15 @@ except ImportError:
     from collections import Iterable
 import contextlib
 import itertools
+import logging
 import os
 import sys
 import types
 
 import numpy as np
+
+
+logger = logging.getLogger(__name__)
 
 
 def infer_language_pair(path):
@@ -78,7 +82,7 @@ def load_indexed_dataset(path, dictionary, dataset_impl=None, combine=False, def
         )
         if dataset is None:
             break
-        print('| loaded {} examples from: {}'.format(len(dataset), path_k))
+        logger.info('loaded {} examples from: {}'.format(len(dataset), path_k))
         datasets.append(dataset)
         if not combine:
             break
@@ -187,8 +191,8 @@ def filter_by_size(indices, dataset, max_positions, raise_exception=False):
             'skip this example with --skip-invalid-size-inputs-valid-test'
         ).format(ignored[0], dataset.size(ignored[0]), max_positions))
     if len(ignored) > 0:
-        print((
-            '| WARNING: {} samples have invalid sizes and will be skipped, '
+        logger.warn((
+            '{} samples have invalid sizes and will be skipped, '
             'max_positions={}, first few sample ids={}'
         ).format(len(ignored), max_positions, ignored[:10]))
     return indices
@@ -221,8 +225,8 @@ def batch_by_size(
             'or `python setup.py build_ext --inplace`'
         )
 
-    max_tokens = max_tokens if max_tokens is not None else sys.maxsize
-    max_sentences = max_sentences if max_sentences is not None else sys.maxsize
+    max_tokens = max_tokens if max_tokens is not None else -1
+    max_sentences = max_sentences if max_sentences is not None else -1
     bsz_mult = required_batch_size_multiple
 
     if isinstance(indices, types.GeneratorType):
@@ -234,6 +238,8 @@ def batch_by_size(
 def process_bpe_symbol(sentence: str, bpe_symbol: str):
     if bpe_symbol == 'sentencepiece':
         sentence = sentence.replace(' ', '').replace('\u2581', ' ').strip()
+    elif bpe_symbol == '_EOW':
+        sentence = sentence.replace(' ', '').replace('_EOW', ' ').strip()
     elif bpe_symbol is not None:
         sentence = (sentence + ' ').replace(bpe_symbol, '').rstrip()
     return sentence

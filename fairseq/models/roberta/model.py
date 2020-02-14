@@ -6,6 +6,8 @@
 RoBERTa: A Robustly Optimized BERT Pretraining Approach.
 """
 
+import logging
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -24,6 +26,9 @@ from fairseq.modules import (
 from fairseq.modules.transformer_sentence_encoder import init_bert_params
 
 from .hub_interface import RobertaHubInterface
+
+
+logger = logging.getLogger(__name__)
 
 
 @register_model('roberta')
@@ -78,6 +83,11 @@ class RobertaModel(FairseqLanguageModel):
                             help='number of positional embeddings to learn')
         parser.add_argument('--load-checkpoint-heads', action='store_true',
                             help='(re-)register and load heads when loading checkpoints')
+        # args for "Reducing Transformer Depth on Demand with Structured Dropout" (Fan et al., 2019)
+        parser.add_argument('--encoder-layerdrop', type=float, metavar='D', default=0,
+                            help='LayerDrop probability for encoder')
+        parser.add_argument('--encoder-layers-to-keep', default=None,
+                            help='which layers to *keep* when pruning as a comma-separated list')
 
     @classmethod
     def build_model(cls, args, task):
@@ -108,8 +118,8 @@ class RobertaModel(FairseqLanguageModel):
             prev_num_classes = self.classification_heads[name].out_proj.out_features
             prev_inner_dim = self.classification_heads[name].dense.out_features
             if num_classes != prev_num_classes or inner_dim != prev_inner_dim:
-                print(
-                    'WARNING: re-registering head "{}" with num_classes {} (prev: {}) '
+                logger.warning(
+                    're-registering head "{}" with num_classes {} (prev: {}) '
                     'and inner_dim {} (prev: {})'.format(
                         name, num_classes, prev_num_classes, inner_dim, prev_inner_dim
                     )
@@ -141,6 +151,8 @@ class RobertaModel(FairseqLanguageModel):
         return RobertaHubInterface(x['args'], x['task'], x['models'][0])
 
     def upgrade_state_dict_named(self, state_dict, name):
+        super().upgrade_state_dict_named(state_dict, name)
+
         prefix = name + '.' if name != '' else ''
         current_head_names = [] if not hasattr(self, 'classification_heads') else \
             self.classification_heads.keys()
@@ -160,8 +172,8 @@ class RobertaModel(FairseqLanguageModel):
                     self.register_classification_head(head_name, num_classes, inner_dim)
             else:
                 if head_name not in current_head_names:
-                    print(
-                        'WARNING: deleting classification head ({}) from checkpoint '
+                    logger.warning(
+                        'deleting classification head ({}) from checkpoint '
                         'not present in current model: {}'.format(head_name, k)
                     )
                     keys_to_delete.append(k)
@@ -169,8 +181,8 @@ class RobertaModel(FairseqLanguageModel):
                     num_classes != self.classification_heads[head_name].out_proj.out_features
                     or inner_dim != self.classification_heads[head_name].dense.out_features
                 ):
-                    print(
-                        'WARNING: deleting classification head ({}) from checkpoint '
+                    logger.warning(
+                        'deleting classification head ({}) from checkpoint '
                         'with different dimensions than current model: {}'.format(head_name, k)
                     )
                     keys_to_delete.append(k)
@@ -183,7 +195,7 @@ class RobertaModel(FairseqLanguageModel):
             cur_state = self.classification_heads.state_dict()
             for k, v in cur_state.items():
                 if prefix + 'classification_heads.' + k not in state_dict:
-                    print('Overwriting', prefix + 'classification_heads.' + k)
+                    logger.info('Overwriting ' + prefix + 'classification_heads.' + k)
                     state_dict[prefix + 'classification_heads.' + k] = v
 
 
@@ -245,6 +257,15 @@ class RobertaEncoder(FairseqDecoder):
     def __init__(self, args, dictionary):
         super().__init__(dictionary)
         self.args = args
+
+        # RoBERTa is a sentence encoder model, so users will intuitively trim
+        # encoder layers. However, the implementation uses the fairseq decoder,
+        # so we fix here.
+        if args.encoder_layers_to_keep:
+            args.encoder_layers = len(args.encoder_layers_to_keep.split(","))
+            args.decoder_layers_to_keep = args.encoder_layers_to_keep
+            args.encoder_layers_to_keep = None
+
         self.sentence_encoder = TransformerSentenceEncoder(
             padding_idx=dictionary.pad(),
             vocab_size=len(dictionary),
@@ -255,6 +276,7 @@ class RobertaEncoder(FairseqDecoder):
             dropout=args.dropout,
             attention_dropout=args.attention_dropout,
             activation_dropout=args.activation_dropout,
+            layerdrop=args.encoder_layerdrop,
             max_seq_len=args.max_positions,
             num_segments=0,
             encoder_normalize_before=True,
@@ -282,9 +304,10 @@ class RobertaEncoder(FairseqDecoder):
             tuple:
                 - the LM output of shape `(batch, src_len, vocab)`
                 - a dictionary of additional data, where 'inner_states'
-                  is a list of hidden states.
+                  is a list of hidden states. Note that the hidden
+                  states have shape `(src_len, batch, vocab)`.
         """
-        x, extra = self.extract_features(src_tokens, return_all_hiddens)
+        x, extra = self.extract_features(src_tokens, return_all_hiddens=return_all_hiddens)
         if not features_only:
             x = self.output_layer(x, masked_tokens=masked_tokens)
         return x, extra
@@ -294,7 +317,7 @@ class RobertaEncoder(FairseqDecoder):
             src_tokens,
             last_state_only=not return_all_hiddens,
         )
-        features = inner_states[-1]
+        features = inner_states[-1].transpose(0, 1)  # T x B x C -> B x T x C
         return features, {'inner_states': inner_states if return_all_hiddens else None}
 
     def output_layer(self, features, masked_tokens=None, **unused):
@@ -319,6 +342,8 @@ def base_architecture(args):
     args.attention_dropout = getattr(args, 'attention_dropout', 0.1)
     args.activation_dropout = getattr(args, 'activation_dropout', 0.0)
     args.pooler_dropout = getattr(args, 'pooler_dropout', 0.0)
+    args.encoder_layers_to_keep = getattr(args, 'encoder_layers_to_keep', None)
+    args.encoder_layerdrop = getattr(args, 'encoder_layerdrop', 0.0)
 
 
 @register_model_architecture('roberta', 'roberta_base')
@@ -341,5 +366,4 @@ def xlm_architecture(args):
     args.encoder_embed_dim = getattr(args, 'encoder_embed_dim', 1280)
     args.encoder_ffn_embed_dim = getattr(args, 'encoder_ffn_embed_dim', 1280*4)
     args.encoder_attention_heads = getattr(args, 'encoder_attention_heads', 16)
-
     base_architecture(args)
