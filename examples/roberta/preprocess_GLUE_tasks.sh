@@ -134,7 +134,7 @@ do
     do
       LANG="input$INPUT_TYPE"
       echo "BPE encoding $SPLIT/$LANG"
-      python -m examples.roberta.multiprocessing_bpe_encoder \
+      python3 -m examples.roberta.multiprocessing_bpe_encoder \
       --encoder-json encoder.json \
       --vocab-bpe vocab.bpe \
       --inputs "$TASK_DATA_FOLDER/processed/$SPLIT.raw.$LANG" \
