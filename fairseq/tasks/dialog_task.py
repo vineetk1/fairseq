@@ -2,12 +2,16 @@
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
+# Vineet Kumar @ sioom: This file is a copy of translation.py, with changes
+# made for the dialog implementation
 
 from argparse import Namespace
 import json
 import itertools
 import logging
 import os
+import pickle
+import torch
 
 import numpy as np
 
@@ -18,7 +22,7 @@ from fairseq.data import (
     data_utils,
     encoders,
     indexed_dataset,
-    LanguagePairDataset,
+    dialog_dataset,
     PrependTokenDataset,
     StripTokenDataset,
     TruncateDataset,
@@ -32,7 +36,7 @@ EVAL_BLEU_ORDER = 4
 logger = logging.getLogger(__name__)
 
 
-def load_langpair_dataset(
+def load_dialog_dataset(
     data_path, split,
     src, src_dict,
     tgt, tgt_dict,
@@ -75,6 +79,10 @@ def load_langpair_dataset(
         src_datasets.append(src_dataset)
 
         tgt_dataset = data_utils.load_indexed_dataset(prefix + tgt, tgt_dict, dataset_impl)
+        with open(
+                os.path.join(data_path, f'dialog-index-{split_k}'), 'rb') as f:
+            dialog_index = pickle.load(f)
+
         if tgt_dataset is not None:
             tgt_datasets.append(tgt_dataset)
 
@@ -119,19 +127,20 @@ def load_langpair_dataset(
             align_dataset = data_utils.load_indexed_dataset(align_path, None, dataset_impl)
 
     tgt_dataset_sizes = tgt_dataset.sizes if tgt_dataset is not None else None
-    return LanguagePairDataset(
+    return dialog_dataset.DialogDataset(
         src_dataset, src_dataset.sizes, src_dict,
         tgt_dataset, tgt_dataset_sizes, tgt_dict,
         left_pad_source=left_pad_source,
         left_pad_target=left_pad_target,
         max_source_positions=max_source_positions,
         max_target_positions=max_target_positions,
-        align_dataset=align_dataset, eos=eos
+        align_dataset=align_dataset, eos=eos,
+        dialog_index=dialog_index,
     )
 
 
-@register_task('translation')
-class TranslationTask(FairseqTask):
+@register_task('dialog_task')
+class DialogTask(FairseqTask):
     """
     Translate from one (source) language to another (target) language.
 
@@ -245,7 +254,7 @@ class TranslationTask(FairseqTask):
         # infer langcode
         src, tgt = self.args.source_lang, self.args.target_lang
 
-        self.datasets[split] = load_langpair_dataset(
+        self.datasets[split] = load_dialog_dataset(
             data_path, split, src, self.src_dict, tgt, self.tgt_dict,
             combine=combine, dataset_impl=self.args.dataset_impl,
             upsample_primary=self.args.upsample_primary,
@@ -258,7 +267,7 @@ class TranslationTask(FairseqTask):
         )
 
     def build_dataset_for_inference(self, src_tokens, src_lengths):
-        return LanguagePairDataset(src_tokens, src_lengths, self.source_dictionary)
+        return dialog_dataset.DialogDataset(src_tokens, src_lengths, self.source_dictionary)
 
     def build_model(self, args):
         model = super().build_model(args)
@@ -278,8 +287,71 @@ class TranslationTask(FairseqTask):
             self.sequence_generator = self.build_generator([model], Namespace(**gen_args))
         return model
 
+    def _aggregate_logging_outputs(self, logging_outputs):
+        """Aggregate logging outputs from all sample in samples."""
+        return {
+            'loss': sum(log.get('loss', 0) for log in logging_outputs),
+            'nll_loss': sum(log.get('nll_loss', 0) for log in logging_outputs),
+            'ntokens': sum(log.get('ntokens', 0) for log in logging_outputs),
+            'nsentences': sum(
+                        log.get('nsentences', 0) for log in logging_outputs),
+            'sample_size': sum(
+                        log.get('sample_size', 0) for log in logging_outputs),
+        }
+
+    def train_step(
+        self, sample, model, criterion, optimizer, update_num, ignore_grad=False
+    ):
+        """
+        Do forward and backward, and return the loss as computed by *criterion*
+        for the given *model* and *sample*.
+
+        Args:
+            samples (list): list of mini-batches, where each mini-batch has
+                source sequence and target sequence from each of dialogs. The
+                format is defined by :class:`~fairseq.data.FairseqDataset`.
+            model (~fairseq.models.BaseFairseqModel): the model
+            criterion (~fairseq.criterions.FairseqCriterion): the criterion
+            optimizer (~fairseq.optim.FairseqOptimizer): the optimizer
+            update_num (int): the current update
+            ignore_grad (bool): multiply loss by 0 if this is set to True
+
+        Returns:
+            tuple:
+                - the loss
+                - the sample size, which is used as the denominator for the
+                  gradient
+                - logging outputs to display while training
+        """
+        model.train()
+        model.set_num_updates(update_num)
+        total_loss, total_sample_size, logging_outputs = 0, 0, []
+        for sub_sample in sample:
+            loss, sample_size, logging_output = criterion(model, sub_sample)
+            if ignore_grad:
+                loss *= 0
+            optimizer.backward(loss)
+            total_loss += loss
+            total_sample_size += sample_size
+            logging_outputs.append(logging_output)
+        return total_loss, total_sample_size,\
+            self._aggregate_logging_outputs(logging_outputs)
+
     def valid_step(self, sample, model, criterion):
-        loss, sample_size, logging_output = super().valid_step(sample, model, criterion)
+        model.eval()
+        total_loss, total_sample_size, logging_outputs = 0, 0, []
+        for sub_sample in sample:
+            with torch.no_grad():
+                loss, sample_size, logging_output = criterion(model, sub_sample)
+            total_loss += loss
+            total_sample_size += sample_size
+            logging_outputs.append(logging_output)
+        logging_output = self._aggregate_logging_outputs(logging_outputs)
+
+        # *****Important*******************
+        # I think the following should also be in a for-loop as above; But I
+        # have to figure out how to calculate the bleu_len, bleu_counts and
+        # bleu_totals
         if self.args.eval_bleu:
             bleu = self._inference_with_bleu(self.sequence_generator, sample, model)
             logging_output['_bleu_sys_len'] = bleu.sys_len
@@ -290,7 +362,8 @@ class TranslationTask(FairseqTask):
             for i in range(EVAL_BLEU_ORDER):
                 logging_output['_bleu_counts_' + str(i)] = bleu.counts[i]
                 logging_output['_bleu_totals_' + str(i)] = bleu.totals[i]
-        return loss, sample_size, logging_output
+
+        return total_loss, total_sample_size, logging_output
 
     def reduce_metrics(self, logging_outputs, criterion):
         super().reduce_metrics(logging_outputs, criterion)
