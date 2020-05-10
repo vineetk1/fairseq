@@ -1,0 +1,309 @@
+# Copyright (c) Facebook, Inc. and its affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+# Vineet Kumar @ sioom: This file is a copy of language_pair_dataset.py, with
+# changes made for the dialog implementation
+
+import logging
+
+import numpy as np
+import torch
+
+from . import data_utils, FairseqDataset
+
+
+logger = logging.getLogger(__name__)
+
+
+def collate(
+    dlgs, dialog_index, pad_idx, eos_idx, left_pad_source=True,
+    left_pad_target=False, input_feeding=True
+):
+    if len(dlgs) == 0:
+        return {}
+
+    def one_seq_per_dlg(key, seq_num_in_dlgs):
+        one_seq_per_dlg = []
+        for dlg in dlgs:
+            temp = dlg['source'][0]
+            #t = temp.new_tensor([bos_idx])
+            t = temp.new_tensor([])
+            if key == 'target':
+                    try:
+                        #t = torch.cat((t, temp.new_tensor([sp2_bot_idx])), -1)
+                        t = torch.cat((t, dlg['target'][seq_num_in_dlgs][: -1]
+                                      if dlg['target'][seq_num_in_dlgs][-1]
+                                      == eos_idx
+                                      else dlg['target'][seq_num_in_dlgs]), -1)
+                    except IndexError:  # dlg seqs less than seq_num_in_dlgs
+                        t = t[: -1]
+            else:  # key is 'source'
+                if (len(dlg['source']) > seq_num_in_dlgs):
+                    for i, src_seq in enumerate(dlg['source']):
+                        if i < seq_num_in_dlgs:
+                            #t = torch.cat((t, temp.new_tensor([sp1_hmn_idx])), -1)
+                            t = torch.cat((t, src_seq[: -1] if src_seq[-1]
+                                           == eos_idx else src_seq), -1)
+                            #t = torch.cat((t, temp.new_tensor([sp2_bot_idx])), -1)
+                            t = torch.cat((t, dlg['target'][i][: -1] if
+                                           dlg['target'][i][-1] == eos_idx else
+                                           dlg['target'][i]), -1)
+                        elif i == seq_num_in_dlgs:
+                            #t = torch.cat((t, temp.new_tensor([sp1_hmn_idx])), -1)
+                            t = torch.cat((t, src_seq[: -1] if src_seq[-1]
+                                           == eos_idx else src_seq), -1)
+                        else:
+                            break
+                else:
+                    pass
+            t = torch.cat((t, temp.new_tensor([eos_idx])), -1)
+            one_seq_per_dlg.append(t)
+        return one_seq_per_dlg
+
+    def merge(seq_per_dlg, left_pad, move_eos_to_beginning=False):
+        return data_utils.collate_tokens(seq_per_dlg, pad_idx, eos_idx,
+                                         left_pad, move_eos_to_beginning,)
+
+    batch = []
+    dlg_idxs = torch.LongTensor([dialog_index[dlg['dlg_id']] for dlg in dlgs])
+    max_num_seqs_in_dlgs = max([len(dlg['source']) for dlg in dlgs])
+    assert max_num_seqs_in_dlgs == max([len(dlg['target']) for dlg in dlgs])
+    for seq_num_in_dlgs in range(max_num_seqs_in_dlgs):
+        seq_per_dlg = one_seq_per_dlg('source', seq_num_in_dlgs)
+        src_lengths = torch.LongTensor([seq.numel() for seq in seq_per_dlg])
+        src_tokens = merge(seq_per_dlg, left_pad=left_pad_source)
+
+        prev_output_tokens = None
+        tgt_tokens = None
+        if dlgs[0].get('target', None) is not None:
+            seq_per_dlg = one_seq_per_dlg('target', seq_num_in_dlgs)
+            tgt_lengths = torch.LongTensor([seq.numel()
+                                            for seq in seq_per_dlg])
+            tgt_tokens = merge(seq_per_dlg, left_pad=left_pad_target)
+            ntokens = sum(tgt_lengths).item()
+
+            if input_feeding:
+                # we create a shifted version of targets for feeding the
+                # previous output token(s) into the next decoder step
+                prev_output_tokens = merge(seq_per_dlg,
+                                           left_pad=left_pad_target,
+                                           move_eos_to_beginning=True,)
+        else:
+            ntokens = sum(src_lengths).item()
+
+        batch.append({
+            'id': dlg_idxs,
+            'numDialogs': len(dlgs),
+            'maxNumSentencesInDialog': max_num_seqs_in_dlgs,
+            'sentenceNum': seq_num_in_dlgs,
+            'ntokens': ntokens,
+            'net_input': {
+                'start_dlg': True if seq_num_in_dlgs == 0 else False,
+                'src_tokens': src_tokens,
+                'src_lengths': src_lengths,
+                'tgt_tokens': tgt_tokens,
+                'tgt_lengths': tgt_lengths
+            },
+            'target': tgt_tokens,
+        })
+        if prev_output_tokens is not None:
+            batch[seq_num_in_dlgs]['net_input']['prev_output_tokens'] =\
+                    prev_output_tokens
+        if seq_num_in_dlgs != 0:
+            del batch[seq_num_in_dlgs]['id']
+            del batch[seq_num_in_dlgs]['numDialogs']
+            del batch[seq_num_in_dlgs]['maxNumSentencesInDialog']
+    return batch
+
+
+class DialogDataset(FairseqDataset):
+    """
+    A pair of torch.utils.data.Datasets.
+
+    Args:
+        src (torch.utils.data.Dataset): source dataset to wrap
+        src_sizes (List[int]): source sentence lengths
+        src_dict (~fairseq.data.Dictionary): source vocabulary
+        tgt (torch.utils.data.Dataset, optional): target dataset to wrap
+        tgt_sizes (List[int], optional): target sentence lengths
+        tgt_dict (~fairseq.data.Dictionary, optional): target vocabulary
+        left_pad_source (bool, optional): pad source tensors on the left side
+            (default: True).
+        left_pad_target (bool, optional): pad target tensors on the left side
+            (default: False).
+        max_source_positions (int, optional): max number of tokens in the
+            source sentence (default: 1024).
+        max_target_positions (int, optional): max number of tokens in the
+            target sentence (default: 1024).
+        shuffle (bool, optional): shuffle dataset elements before batching
+            (default: True).
+        input_feeding (bool, optional): create a shifted version of the targets
+            to be passed into the model for teacher forcing (default: True).
+        remove_eos_from_source (bool, optional): if set, removes eos from end
+            of source if it's present (default: False).
+        append_eos_to_target (bool, optional): if set, appends eos to end of
+            target if it's absent (default: False).
+        align_dataset (torch.utils.data.Dataset, optional): dataset
+            containing alignments.
+        append_bos (bool, optional): if set, appends bos to the beginning of
+            source/target sentence.
+        dialog_index (List[int]): maps dialog_id to the first sequence_id
+    """
+
+    def __init__(
+        self, src, src_sizes, src_dict,
+        tgt=None, tgt_sizes=None, tgt_dict=None,
+        left_pad_source=True, left_pad_target=False,
+        max_source_positions=1024, max_target_positions=1024,
+        shuffle=True, input_feeding=True,
+        remove_eos_from_source=False, append_eos_to_target=False,
+        align_dataset=None,
+        append_bos=False, eos=None, dialog_index=None
+    ):
+        if tgt_dict is not None:
+            assert src_dict.pad() == tgt_dict.pad()
+            assert src_dict.eos() == tgt_dict.eos()
+            assert src_dict.unk() == tgt_dict.unk()
+        self.src = src
+        self.tgt = tgt
+        self.src_sizes = np.array(src_sizes)
+        self.tgt_sizes = np.array(tgt_sizes) if tgt_sizes is not None else None
+        self.src_dict = src_dict
+        self.tgt_dict = tgt_dict
+        self.left_pad_source = left_pad_source
+        self.left_pad_target = left_pad_target
+        self.max_source_positions = max_source_positions
+        self.max_target_positions = max_target_positions
+        self.shuffle = shuffle
+        self.input_feeding = input_feeding
+        self.remove_eos_from_source = remove_eos_from_source
+        self.append_eos_to_target = append_eos_to_target
+        self.align_dataset = align_dataset
+        if self.align_dataset is not None:
+            assert self.tgt_sizes is not None, "Both source and target needed when alignments are provided"
+        self.append_bos = append_bos
+        self.eos = (eos if eos is not None else src_dict.eos())
+        self.dialog_index = dialog_index
+
+    def _seq_ids(self, dlg_id):
+        # Return sequences that belong to the dialog
+        return [seq_id for seq_id in range(self.dialog_index[dlg_id],
+                self.dialog_index[dlg_id+1]
+                if dlg_id+1 != len(self.dialog_index)
+                else len(self.src))]
+
+    def __getitem__(self, dlg_id):
+        src_items = []
+        tgt_items = [] if self.tgt is not None else None
+        for seq_id in self._seq_ids(dlg_id):
+            src_items.append(self.src[seq_id])
+            tgt_items.append(self.tgt[seq_id]) \
+                if self.tgt is not None else None
+
+        # Append EOS to end of tgt sentence if it does not have an EOS and
+        # remove EOS from end of src sentence if it exists. This is useful when
+        # we use existing datasets for opposite directions i.e., when we want
+        # to use tgt_dataset as src_dataset and vice versa
+        if self.append_eos_to_target and self.tgt:
+            tgt_items1 = tgt_items
+            eos = self.tgt_dict.eos() if self.tgt_dict else self.src_dict.eos()
+            tgt_items = [torch.cat([tgt_item, torch.LongTensor([eos])])
+                         if tgt_item[-1] != eos else tgt_item
+                         for tgt_item in tgt_items1]
+
+        if self.remove_eos_from_source:
+            src_items1 = src_items
+            eos = self.src_dict.eos()
+            src_items = [src_item[:-1] if src_item[-1] == eos else src_item
+                         for src_item in src_items1]
+
+        return {
+            'dlg_id': dlg_id,
+            'source': src_items,
+            'target': tgt_items,
+        }
+
+    def __len__(self):
+        return len(self.dialog_index)
+
+    def collater(self, samples):
+        """Merge a list of samples to form a mini-batch.
+
+        Args:
+            samples (List[dict]): samples to collate
+
+        Returns:
+            dict: a mini-batch with the following keys:
+
+                - `id` (LongTensor): example IDs in the original input order
+                - `ntokens` (int): total number of tokens in the batch
+                - `net_input` (dict): the input to the Model, containing keys:
+
+                  - `src_tokens` (LongTensor): a padded 2D Tensor of tokens in
+                    the source sentence of shape `(bsz, src_len)`. Padding will
+                    appear on the left if *left_pad_source* is ``True``.
+                  - `src_lengths` (LongTensor): 1D Tensor of the unpadded
+                    lengths of each source sentence of shape `(bsz)`
+                  - `prev_output_tokens` (LongTensor): a padded 2D Tensor of
+                    tokens in the target sentence, shifted right by one
+                    position for teacher forcing, of shape `(bsz, tgt_len)`.
+                    This key will not be present if *input_feeding* is
+                    ``False``.  Padding will appear on the left if
+                    *left_pad_target* is ``True``.
+
+                - `target` (LongTensor): a padded 2D Tensor of tokens in the
+                  target sentence of shape `(bsz, tgt_len)`. Padding will appear
+                  on the left if *left_pad_target* is ``True``.
+        """
+        return collate(
+            samples, self.dialog_index, pad_idx=self.src_dict.pad(), eos_idx=self.eos,
+            left_pad_source=self.left_pad_source, left_pad_target=self.left_pad_target,
+            input_feeding=self.input_feeding,
+        )
+
+    def _num_tokens_src_tgt_dialogs(self, dlg_id):
+        """Return the number of tokens in the dialog. This value is used to
+        enforce ``--max-tokens`` during batching."""
+        src_dialog_size = tgt_dialog_size = 0
+        for seq_id in self._seq_ids(dlg_id):
+            src_dialog_size += self.src_sizes[seq_id]
+            tgt_dialog_size += self.tgt_sizes[seq_id] \
+                if self.tgt_sizes is not None else 0
+        return src_dialog_size, tgt_dialog_size
+
+    def num_tokens(self, index):
+        """Return the number of tokens in a sample. This value is used to
+        enforce ``--max-tokens`` during batching."""
+        return max(self._num_tokens_src_tgt_dialogs(index))
+
+    def size(self, index):
+        """Return an example's size as a float or tuple. This value is used when
+        filtering a dataset with ``--max-positions``."""
+        return self._num_tokens_src_tgt_dialogs(index)
+
+    def ordered_indices(self):
+        """Return an ordered list of indices. Batches will be constructed based
+        on this order."""
+        if self.shuffle:
+            return np.random.permutation(len(self))
+        else:
+            return np.arange(len(self))
+        # In Translation application, sequences are ordered from those with
+        # least # of tokens to those with max # of tokens. Doesn't make sense
+        # to order dialogs based on the # of tokens they have. No other way of
+        # ordering dialog indices makes sense, so ordering is not implemented
+
+    @property
+    def supports_prefetch(self):
+        return (
+            getattr(self.src, 'supports_prefetch', False)
+            and (getattr(self.tgt, 'supports_prefetch', False) or self.tgt is None)
+        )
+
+    def prefetch(self, dlg_ids):
+        seq_ids = [seq_id for dlg_id in dlg_ids
+                   for seq_id in self._seq_ids(dlg_id)]
+        self.src.prefetch(seq_ids)
+        if self.tgt is not None:
+            self.tgt.prefetch(seq_ids)
