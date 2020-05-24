@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 def collate(
     dlgs, dialog_index, pad_idx, eos_idx, left_pad_source=True,
-    left_pad_target=False, input_feeding=True
+    left_pad_target=False, input_feeding=True,
 ):
     if len(dlgs) == 0:
         return {}
